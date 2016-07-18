@@ -29,12 +29,12 @@ end
 
 % ************************** DEFINE USEFUL QUANTITIES *********************
 switch net.noise_dist
-	case 'gauss'
-		Z = numel(fs.pop_activity);
-	case 'poiss'
-		Z = sum(sum(fs.pop_activity));
-	otherwise
-		error('Invalid noise distribution')
+    case 'gauss'
+        Z = numel(fs.pop_activity);
+    case 'poiss'
+        Z = sum(sum(fs.pop_activity));
+    otherwise
+        error('Invalid noise distribution')
 end
 T = size(fs.pop_activity,1);
 num_cells = net.num_cells;
@@ -144,13 +144,13 @@ end
 switch optim_params.optimizer
     case 'minFunc'
         [weights, f, ~, output] = minFunc(obj_fun, init_params, ...
-                                    optim_params);
+                                          optim_params);
     case 'fminunc'
         [weights, f, ~, output] = fminunc(obj_fun, init_params, ...
-                                    optim_params);
+                                          optim_params);
   	case 'con'
-		[weights, f, ~, output] = minConf_SPG(obj_fun, init_params, ...
-                                    @(t,b) max(t,0), optim_params);
+        [weights, f, ~, output] = minConf_SPG(obj_fun, init_params, ...
+                                          @(t,b) max(t,0), optim_params);
 end
 
 [~, grad_pen] = objective_fun(weights);

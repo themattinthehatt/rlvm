@@ -785,39 +785,39 @@ methods (Static)
     
     
 	function stim_params = create_stim_params(dims, num_outputs, varargin)
-	% stim_params = StimSubunit.create_stim_params(...
+    % stim_params = StimSubunit.create_stim_params(...
     %                                       stim_dims, num_outputs, kargs)
-	%
-	% Creates a struct containing stimulus parameters
     %
-	% INPUTS:
-	%   dims:           dimensionality of the (time-embedded) stimulus, in 
+    % Creates a struct containing stimulus parameters
+    %
+    % INPUTS:
+    %   dims:           dimensionality of the (time-embedded) stimulus, in 
     %                   the form: [num_lags num_xpix num_ypix]. For 1 
     %                   spatial dimension use only num_xpix
     %   num_outputs:    number of outputs from the subunit; for 
     %                   'individual' subunit, this is equal to the number 
     %                   of cells; for 'shared' subunit, this is equal to 1.
-	%     
+    %     
     %   optional key-value pairs:
-	%       'stim_dt', scalar
+    %       'stim_dt', scalar
     %           time resolution (in ms) of stim matrix (used only for 
     %           plotting)
-	%       'up_fac', scalar
+    %       'up_fac', scalar
     %           up-sampling factor of the stimulus from its raw form
-	%       'tent_spacing', scalar
+    %       'tent_spacing', scalar
     %           spacing of tent-basis functions when using a tent-basis 
     %           representaiton of the stimulus (allows for the stimulus 
     %           filters to be represented at a lower time resolution than 
     %           other model components). 
-	%       'boundary_conds', vector
+    %       'boundary_conds', vector
     %           boundary conditions on each dimension (Inf is free, 0 is 
     %           tied to 0, and -1 is periodic)
-	%		'split_pts', vector
+    %       'split_pts', vector
     %           specifies an internal boundary as a 3-element vector: 
     %           [direction boundary_ind boundary_cond]
-	%
-	% OUTPUTS:
-	%   stim_params: struct of stimulus parameters
+    %
+    % OUTPUTS:
+    %   stim_params: struct of stimulus parameters
     
     assert(nargin >= 2, ...
         'Not enough inputs')

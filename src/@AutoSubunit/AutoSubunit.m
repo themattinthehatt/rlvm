@@ -30,8 +30,8 @@ properties (Hidden) % inherited from RLVM
                              'l2_weights', 'l2_weights1', 'l2_weights2',...
                              'l1_hid' ,'d2t_hid', 'l1_hid_param'};
     allowed_auto_NLtypes = {'lin', 'relu', 'sigmoid', 'softplus'};
-	min_pred_rate
-	max_g = 50
+    min_pred_rate
+    max_g = 50
 end
 
 %% ********************  constructor **************************************
@@ -210,8 +210,8 @@ methods
     %   optional key-value pairs:
     %       'reg_type', scalar
     %           reg_types:
-	%           'l2_weights' | 'l2_weights1' | 'l2_weights2' | 'l2_biases'
-	%           | 'l2_biases1' | 'l2_biases2' | 'l1_hid' | 'd2t_hid'
+    %           'l2_weights' | 'l2_weights1' | 'l2_weights2' | 'l2_biases'
+    %           | 'l2_biases1' | 'l2_biases2' | 'l1_hid' | 'd2t_hid'
     %       'kl_param', scalar
     %           scalar in [0 1] specifying the KL sparsity penalty value if
     %           using 'l1_hid' with sigmoid activation functions
@@ -450,11 +450,11 @@ methods
     B1 = subunit.b1;
     B2 = subunit.b2;
     lambda_w1 = subunit.reg_lambdas.l2_weights1;
-	lambda_w2 = subunit.reg_lambdas.l2_weights2;
+    lambda_w2 = subunit.reg_lambdas.l2_weights2;
     lambda_b1 = subunit.reg_lambdas.l2_biases1;
     lambda_b2 = subunit.reg_lambdas.l2_biases2;
     lambda_l1_hid = subunit.reg_lambdas.l1_hid;
-	lambda_d2t_hid = subunit.reg_lambdas.d2t_hid;
+    lambda_d2t_hid = subunit.reg_lambdas.d2t_hid;
     T = size(pop_activity,1);
     
     % sparsity penalty eval on hidden layer

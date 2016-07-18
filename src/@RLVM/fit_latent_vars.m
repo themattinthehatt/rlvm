@@ -21,12 +21,12 @@ net.auto_subunit.check_inputs(fs.pop_activity);
 
 % ************************** DEFINE USEFUL QUANTITIES *********************
 switch net.noise_dist
-	case 'gauss'
-		Z = numel(fs.pop_activity);
-	case 'poiss'
-		Z = sum(sum(fs.pop_activity));
-	otherwise
-		error('Invalid noise distribution')
+    case 'gauss'
+        Z = numel(fs.pop_activity);
+    case 'poiss'
+        Z = sum(sum(fs.pop_activity));
+    otherwise
+        error('Invalid noise distribution')
 end
 T = size(fs.pop_activity, 1);
 num_cells = net.num_cells;
@@ -56,7 +56,7 @@ lambda_sm  = net.auto_subunit.reg_lambdas.d2t_hid;
 if lambda_sm > 0
     % dt
 % 	reg_mat = spdiags([-1*ones(T,1) ones(T,1)],[0 1], T, T);
-	% d2t
+    % d2t
     reg_mat = spdiags([ones(T,1) -2*ones(T,1) ones(T,1)], [-1 0 1], T, T);
 	reg_mat_grad = reg_mat'*reg_mat;
 end
@@ -155,21 +155,21 @@ net.fit_history = cat(1, net.fit_history, curr_fit_details);
     pred_activity = bsxfun(@plus, net.apply_spk_NL(gint2), offsets');
 	
     % cost function and gradient eval wrt predicted output
-	switch net.noise_dist
-		case 'gauss'
-			cost_grad = pred_activity - fs.pop_activity;
-			cost_func = 0.5*sum(sum(cost_grad.^2));
-		case 'poiss'
-			% calculate cost function
-			cost_func = -sum(sum(fs.pop_activity.*log(pred_activity) - pred_activity));
-			% calculate gradient
-			cost_grad = -(fs.pop_activity./pred_activity - 1);
+    switch net.noise_dist
+        case 'gauss'
+            cost_grad = pred_activity - fs.pop_activity;
+            cost_func = 0.5*sum(sum(cost_grad.^2));
+        case 'poiss'
+            % calculate cost function
+            cost_func = -sum(sum(fs.pop_activity.*log(pred_activity) - pred_activity));
+            % calculate gradient
+            cost_grad = -(fs.pop_activity./pred_activity - 1);
             % set gradient equal to zero where underflow occurs
-			cost_grad(pred_activity <= net.min_pred_rate) = 0;
-	end
+            cost_grad(pred_activity <= net.min_pred_rate) = 0;
+    end
     
     % ******************* COMPUTE GRADIENT ********************************
-	% grad wrt latent_vars
+    % grad wrt latent_vars
     lat_var_grad = ((net.apply_spk_NL_deriv(gint2).*cost_grad)*w2') .* ...
                      net.auto_subunit.apply_act_deriv(lat_vars);
         
@@ -177,14 +177,14 @@ net.fit_history = cat(1, net.fit_history, curr_fit_details);
     % smoothness penalty eval on hidden layer
 	if lambda_sm > 0
 	    smooth_func = 0.5*sum(sum((reg_mat*lat_vars).^2)) / T;
-		smooth_grad = reg_mat_grad*lat_vars / T;
-	else
-		smooth_func = 0;
-		smooth_grad = zeros(size(hidden_act));
-	end
+        smooth_grad = reg_mat_grad*lat_vars / T;
+    else
+        smooth_func = 0;
+        smooth_grad = zeros(size(hidden_act));
+    end
     
 
-	% ******************* COMBINE *****************************************				
+    % ******************* COMBINE *****************************************				
     cost_func = cost_func / Z + lambda_sm * smooth_func;
     grad = lat_var_grad(:) / Z + lambda_sm * smooth_grad(:);
 %     fprintf('cost_func: %g\n', cost_func / Z)

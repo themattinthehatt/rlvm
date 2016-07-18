@@ -99,12 +99,12 @@ methods
     %                       autoencoder model is desired
     %
     %   optional key-value pairs: [defaults]
-	%       'noise_dist', string
+    %       'noise_dist', string
     %           ['gauss'] | 'poiss'
     %           specifies noise distribution for cost function
     %       'spkNL', string
     %           ['lin'] | 'relu' | 'sigmoid' | 'softplus'
-	%       'fit_overall_offsets', boolean
+    %       'fit_overall_offsets', boolean
     %           [0] | 1
     %           specifies whether to fit overall offsets (1) or not (0)
     %
@@ -430,7 +430,7 @@ methods
                     end
                 end
             otherwise
-            error('Invalid input flag')
+                error('Invalid input flag')
         end
         i = i + 2;
     end

@@ -21,12 +21,12 @@ net.auto_subunit.check_inputs(fs.pop_activity);
 
 % ************************** DEFINE USEFUL QUANTITIES *********************
 switch net.noise_dist
-	case 'gauss'
-		Z = numel(fs.pop_activity);
-	case 'poiss'
-		Z = sum(sum(fs.pop_activity));
-	otherwise
-		error('Invalid noise distribution')
+    case 'gauss'
+        Z = numel(fs.pop_activity);
+    case 'poiss'
+        Z = sum(sum(fs.pop_activity));
+    otherwise
+        error('Invalid noise distribution')
 end
 T = size(fs.pop_activity, 1);
 num_cells = net.num_cells;
@@ -96,13 +96,13 @@ end
 switch optim_params.optimizer
     case 'minFunc'
         [weights, f, ~, output] = minFunc(obj_fun, init_params, ...
-                                        optim_params);
+                                          optim_params);
     case 'fminunc'
         [weights, f, ~, output] = fminunc(obj_fun, init_params, ...
-                                        optim_params);
+                                          optim_params);
 	case 'con'
-		[weights, f, ~, output] = minConf_SPG(obj_fun, init_params, ...
-                                        @(t,b) max(t,0), optim_params);
+        [weights, f, ~, output] = minConf_SPG(obj_fun, init_params, ...
+                                          @(t,b) max(t,0), optim_params);
 end
 
 [~, grad_pen] = objective_fun(weights);
@@ -149,21 +149,21 @@ net.fit_history = cat(1, net.fit_history, curr_fit_details);
     pred_activity = bsxfun(@plus, net.apply_spk_NL(gint2), offsets');
 	
     % cost function and gradient eval wrt predicted output
-	switch net.noise_dist
-		case 'gauss'
-			cost_grad = pred_activity - fs.pop_activity;
-			cost_func = 0.5*sum(sum(cost_grad.^2));
-		case 'poiss'
-			% calculate cost function
-			cost_func = -sum(sum(fs.pop_activity.*log(pred_activity) - pred_activity));
-			% calculate gradient
-			cost_grad = -(fs.pop_activity./pred_activity - 1);
+    switch net.noise_dist
+        case 'gauss'
+            cost_grad = pred_activity - fs.pop_activity;
+            cost_func = 0.5*sum(sum(cost_grad.^2));
+        case 'poiss'
+            % calculate cost function
+            cost_func = -sum(sum(fs.pop_activity.*log(pred_activity) - pred_activity));
+            % calculate gradient
+            cost_grad = -(fs.pop_activity./pred_activity - 1);
             % set gradient equal to zero where underflow occurs
-			cost_grad(pred_activity <= net.min_pred_rate) = 0;
-	end
+            cost_grad(pred_activity <= net.min_pred_rate) = 0;
+    end
     
     % ******************* COMPUTE GRADIENT ********************************
-	gb2 = net.apply_spk_NL_deriv(gint2) .* cost_grad;
+    gb2 = net.apply_spk_NL_deriv(gint2) .* cost_grad;
     gw2 = latent_vars' * gb2;
     weight_grad = [gw2(:); sum(gb2,1)'];
         
@@ -173,7 +173,7 @@ net.fit_history = cat(1, net.fit_history, curr_fit_details);
     
     reg_pen_grad = [lambda_w2 * w2(:); lambda_b2 * b2(:)];
     
-	% ******************* COMBINE *****************************************				
+    % ******************* COMBINE *****************************************				
     cost_func = cost_func / Z + reg_pen;
     grad = weight_grad(:) / Z + reg_pen_grad;
 
