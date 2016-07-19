@@ -11,6 +11,7 @@ classdef RLVMTests < matlab.unittest.TestCase
 %   - more extensive
 %   - check w/ stim subunits
 % - fit_model?
+%   - check key-value pair handling
 
 properties 
     num_lags = 8;

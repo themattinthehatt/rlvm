@@ -22,6 +22,7 @@
 %   - (DONE 07/13/16) fit_weights: redo check_inputs
 %   - (DONE 07/14/16) fit_model - check for minFunc
 %   - fit_model - let some model components be held constant
+%   - fit_alt - make num_iters/verbose options in optim_params?
 %
 % Unit Testing
 %   - (DONE 07/12/16) RLVM
@@ -29,11 +30,12 @@
 %   - (DONE 07/12/16) StimSubunit
 %   - (DONE 07/14/16) fit_weights_latent_states/auto
 %   - (DONE 07/14/16) fit_weights_latent_states/stim_individual
-%   - fit_weights_latent_states/stim_shared
 %   - (DONE 07/14/16) fit_weights_latent_states/auto+stim_individual
+%   - fit_weights_latent_states/stim_shared
 %   - fit_weights_latent_states/auto+stim_shared
 %   - fit_weights
 %   - fit_latent_states
+%   - fit_alt
 %
 % Formatting/Organization
 %   - reformat (indents are spaces, no tabs; add whitespace around args)

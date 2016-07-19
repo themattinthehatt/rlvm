@@ -40,9 +40,9 @@ if ischar(fs.init_latent_vars)
         [~, gint] = net.auto_subunit.get_model_internals(fs.pop_activity); 
         assert(all(size(gint{1}) == [T, num_hid_nodes]), ...
             'size mismatch between stored latent_vars matrix and input')
-        latent_vars = net.auto_subunit.apply_act_func(gint{1});
+        latent_vars = gint{1};
     elseif strcmp(fs.init_latent_vars, 'gauss')
-        latent_vars = randn(T, num_hid_nodes);
+        latent_vars = abs(randn(T, num_hid_nodes));
     else
         error('Incorrect init_latent_vars string')
     end

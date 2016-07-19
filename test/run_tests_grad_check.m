@@ -100,7 +100,7 @@ if tests.auto
             fprintf(auto_msg{i})
         end
     else
-        fprintf('All tests passed')
+        fprintf('All tests passed\n')
     end
     fprintf('\n')
 end
@@ -112,7 +112,7 @@ if tests.stim_ind
             fprintf(stim_ind_msg{i})
         end
     else
-        fprintf('All tests passed')
+        fprintf('All tests passed\n')
     end
     fprintf('\n')
 end
@@ -124,7 +124,7 @@ if tests.stim_sh
             fprintf(stim_sh_msg{i})
         end
     else
-        fprintf('All tests passed')
+        fprintf('All tests passed\n')
     end
     fprintf('\n')
 end
@@ -136,7 +136,7 @@ if tests.auto_stim_ind
             fprintf(auto_stim_ind_msg{i})
         end
     else
-        fprintf('All tests passed')
+        fprintf('All tests passed\n')
     end
     fprintf('\n')
 end
@@ -148,7 +148,7 @@ if tests.auto_stim_sh
             fprintf(auto_stim_sh_msg{i})
         end
     else
-        fprintf('All tests passed')
+        fprintf('All tests passed\n')
     end
     fprintf('\n')
 end

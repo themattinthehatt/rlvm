@@ -45,7 +45,7 @@ if ischar(fs.init_weights)
     end
 elseif isvector(fs.init_weights)
     assert(length(fs.init_weights) == ...
-        net.num_cells + net.num_cells * num_hid_nodes, ...
+        num_cells + num_cells * num_hid_nodes, ...
         'init_weight vector does not have proper length')
 else
     error('Improper init_weight format')
@@ -68,7 +68,7 @@ if ischar(fs.init_latent_vars)
         [~, gint] = net.auto_subunit.get_model_internals(fs.pop_activity); 
         init_params = gint{1}(:);
     elseif strcmp(fs.init_latent_vars, 'gauss')
-        init_params = randn(T * num_hid_nodes, 1);
+        init_params = abs(randn(T * num_hid_nodes, 1));
     else
         error('Incorrect init_latent_vars string')
     end
