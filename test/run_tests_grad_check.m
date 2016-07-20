@@ -13,10 +13,10 @@
 verbose = 1;
 
 % select tests to run
-tests.auto = 1;
-tests.stim_ind = 1;
-tests.stim_sh = 0;
-tests.auto_stim_ind = 1;
+tests.auto = 0;
+tests.stim_ind = 0;
+tests.stim_sh = 1;
+tests.auto_stim_ind = 0;
 tests.auto_stim_sh = 0;
 
 % define all model options
@@ -31,6 +31,7 @@ stim_regs = {'l2'};
 
 % import test data
 % load('../data/sim_data.mat')
+load('~/Dropbox/Lab/auto_paper/sim_data/data/sim_data_21.mat')
 test_data{1} = data(1:3000, 1:10);
 test_data{1} = data_spike(1:3000, 1:10);
 
@@ -65,6 +66,13 @@ for i = 1:length(noise_models)
     
     % stim_shared model
     if tests.stim_sh
+        [passes, fails, stim_sh_msg] = test_stim_sh_models( ...
+            test_data, ...
+            noise_models, ...
+            stim_NLtypes, ...
+            stim_regs);
+        pass_total = pass_total + passes;
+        fail_total = fail_total + fails;
     end
     
     % auto+stim_individual model
@@ -83,6 +91,16 @@ for i = 1:length(noise_models)
     
     % auto+stim_shared model
     if tests.auto_stim_sh
+        [passes, fails, auto_stim_sh_msg] = test_auto_stim_sh_models( ...
+            test_data, ...
+            noise_models, ...
+            auto_NLtypes, ...
+            stim_NLtypes, ...
+            auto_regs_1, ...
+            auto_regs_2, ...
+            stim_regs);
+        pass_total = pass_total + passes;
+        fail_total = fail_total + fails;
     end
     
 end

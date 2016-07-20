@@ -65,6 +65,7 @@ methods (Test)
         test_case.fatalAssertEqual(test_case.net.fit_params.fit_stim_individual, 1)
         test_case.fatalAssertEqual(test_case.net.fit_params.fit_stim_shared, 0)
         test_case.fatalAssertEqual(test_case.net.fit_params.fit_overall_offsets, 0)
+        test_case.fatalAssertEmpty(test_case.net.stim_weights)
     end
         
     function test_RLVM(test_case)
@@ -126,12 +127,6 @@ methods (Test)
         test_case.verifySubstring(temp.optim_params.monitor, 'batch')
                 
         % set_reg_params
-        temp = test_case.net.set_reg_params('stim', 'l2', 1, 'd2t', 1, 'd2x', 1, 'd2xt', 1);
-        test_case.verifyEqual(temp.stim_subunits.reg_lambdas.l2, 1)
-        test_case.verifyEqual(temp.stim_subunits.reg_lambdas.d2t, 1)
-        test_case.verifyEqual(temp.stim_subunits.reg_lambdas.d2x, 1)
-        test_case.verifyEqual(temp.stim_subunits.reg_lambdas.d2xt, 1)
-        
         temp = test_case.net.set_reg_params('auto', 'l2_biases', 1, 'l2_weights', 1, 'l1_hid', 1, 'd2t_hid', 1);
         test_case.verifyEqual(temp.auto_subunit.reg_lambdas.l2_biases1, 1)
         test_case.verifyEqual(temp.auto_subunit.reg_lambdas.l2_biases2, 1)
@@ -146,6 +141,18 @@ methods (Test)
         test_case.verifyEqual(temp.auto_subunit.reg_lambdas.l2_biases2, 10)
         test_case.verifyEqual(temp.auto_subunit.reg_lambdas.l2_weights1, 10)
         test_case.verifyEqual(temp.auto_subunit.reg_lambdas.l2_weights2, 10)
+        
+        temp = test_case.net.set_reg_params('stim', 'l2', 1, 'd2t', 1, 'd2x', 1, 'd2xt', 1);
+        test_case.verifyEqual(temp.stim_subunits.reg_lambdas.l2, 1)
+        test_case.verifyEqual(temp.stim_subunits.reg_lambdas.d2t, 1)
+        test_case.verifyEqual(temp.stim_subunits.reg_lambdas.d2x, 1)
+        test_case.verifyEqual(temp.stim_subunits.reg_lambdas.d2xt, 1)
+        
+        temp = test_case.net.set_reg_params('stim_weights', 'l2', 1);
+        test_case.verifyEqual(temp.lambda_stim, 1)
+        
+        temp = test_case.net.set_reg_params('off', 'l2', 1);
+        test_case.verifyEqual(temp.lambda_off, 1)
     end
 
     function test_getting_methods(test_case)
@@ -158,13 +165,151 @@ methods (Test)
     end
 
     function test_fitting_methods(test_case)
-        % fit_model
+        % FIT_MODEL
         data = randn(test_case.expt_len, test_case.net.num_cells);
+
+        % fit auto model w/o stim model
         temp = test_case.net.set_fit_params('fit_stim_individual', 0);
         temp = temp.set_fit_params('fit_stim_shared', 0);
         temp = temp.set_optim_params('max_iter', 2);
+        temp = temp.fit_model('params', data, test_case.xstim, ...
+                              'indx_tr', 1:10, ...
+                              'subs', 1, ...
+                              'init_weights', 'gauss', ...
+                              'init_latent_vars', 'gauss', ...
+                              'init_type', 'init', ...
+                              'first_fit', 'weights');
+        % extra inputs are to ensure no errors are thrown
+        test_case.verifyNotEqual(temp.auto_subunit.w2, test_case.net.auto_subunit.w2)
+        test_case.verifyEqual(temp.stim_subunits.filt, test_case.net.stim_subunits.filt)
+
+        % fit stim model w/o auto model
+        temp = test_case.net.set_fit_params('fit_auto', 0);
+        temp = temp.set_fit_params('fit_stim_individual', 1);
+        temp = temp.set_optim_params('max_iter', 2);
         temp = temp.fit_model('params', data, test_case.xstim, 'indx_tr', 1:10);
-        test_case.verifyNotEqual(temp.auto_subunit.w2, test_case.net.auto_subunit.w2')
+        test_case.verifyEqual(temp.auto_subunit.w2, test_case.net.auto_subunit.w2)
+        test_case.verifyNotEqual(temp.stim_subunits.filt, test_case.net.stim_subunits.filt)
+        
+        % fit auto model w/ stim model
+        temp = test_case.net.set_fit_params('fit_stim_individual', 1);
+        temp = temp.set_fit_params('fit_stim_shared', 0);
+        temp = temp.set_optim_params('max_iter', 2);
+        temp = temp.fit_model('params', data, test_case.xstim, 'indx_tr', 1:10);
+        test_case.verifyNotEqual(temp.auto_subunit.w2, test_case.net.auto_subunit.w2)
+        test_case.verifyNotEqual(temp.stim_subunits.filt, test_case.net.stim_subunits.filt)
+               
+        % create new model w/ two individual stim subunits
+        test_stim_params = StimSubunit.create_stim_params( ...
+            [test_case.num_lags, test_case.num_xpix, test_case.num_ypix], ...
+            test_case.num_cells);
+        test_xstim{1} = StimSubunit.create_time_embedding(...
+            randn(test_case.expt_len, test_case.num_xpix*test_case.num_ypix), ...
+            test_stim_params);
+        test_stim_params(2) = StimSubunit.create_stim_params( ...
+            [test_case.num_lags + 5, test_case.num_xpix, test_case.num_ypix], ...
+            test_case.num_cells);
+        test_xstim{2} = StimSubunit.create_time_embedding(...
+            randn(test_case.expt_len, test_case.num_xpix*test_case.num_ypix), ...
+            test_stim_params(2));
+        test_init_params = RLVM.create_init_params( ...
+            test_stim_params, test_case.num_cells, test_case.num_hid_nodes);
+        test_net = RLVM(test_init_params);
+        test_case.verifyEqual(test_net.fit_params.fit_auto, 1)
+        test_case.verifyEqual(test_net.fit_params.fit_stim_individual, 1)
+
+        % fit auto model w/ stim subunit 1, w/o stim subunit 2
+        temp = test_net.fit_model('params', data, test_xstim, ...
+                                  'indx_tr', 1:10, ...
+                                  'subs', 1);
+        test_case.verifyNotEqual(temp.auto_subunit.w2, test_net.auto_subunit.w2)
+        test_case.verifyNotEqual(temp.stim_subunits(1).filt, ...
+                                 test_net.stim_subunits(1).filt)
+        test_case.verifyEqual(temp.stim_subunits(2).filt, ...
+                              test_net.stim_subunits(2).filt)
+
+        % fit auto model w/ stim subunit 2, w/o stim subunit 2
+        temp = test_net.fit_model('params', data, test_xstim, ...
+                                  'indx_tr', 1:10, ...
+                                  'subs', 2);
+        test_case.verifyNotEqual(temp.auto_subunit.w2, test_net.auto_subunit.w2)
+        test_case.verifyEqual(temp.stim_subunits(1).filt, ...
+                              test_net.stim_subunits(1).filt)
+        test_case.verifyNotEqual(temp.stim_subunits(2).filt, ...
+                                 test_net.stim_subunits(2).filt)
+        
+        % fit auto model w/ both stim subunits
+        temp = test_net.fit_model('params', data, test_xstim, ...
+                                  'indx_tr', 1:10, ...
+                                  'subs', 1:2);
+        test_case.verifyNotEqual(temp.auto_subunit.w2, test_net.auto_subunit.w2)
+        test_case.verifyNotEqual(temp.stim_subunits(1).filt, ...
+                                 test_net.stim_subunits(1).filt)
+        test_case.verifyNotEqual(temp.stim_subunits(2).filt, ...
+                                 test_net.stim_subunits(2).filt)
+                             
+        % fit stim subunit 1 w/o stim subunit 2, auto model
+        temp = test_net.set_fit_params('fit_auto', 0);
+        temp = temp.fit_model('params', data, test_xstim, ...
+                              'indx_tr', 1:10, ...
+                              'subs', 1);
+        test_case.verifyEqual(temp.auto_subunit.w2, test_net.auto_subunit.w2)
+        test_case.verifyNotEqual(temp.stim_subunits(1).filt, ...
+                                 test_net.stim_subunits(1).filt)
+        test_case.verifyEqual(temp.stim_subunits(2).filt, ...
+                              test_net.stim_subunits(2).filt)
+                          
+        % fit stim subunit 2 w/o stim subunit 2, auto model
+        temp = test_net.set_fit_params('fit_auto', 0);
+        temp = temp.fit_model('params', data, test_xstim, ...
+                              'indx_tr', 1:10, ...
+                              'subs', 2);
+        test_case.verifyEqual(temp.auto_subunit.w2, test_net.auto_subunit.w2)
+        test_case.verifyEqual(temp.stim_subunits(1).filt, ...
+                              test_net.stim_subunits(1).filt)
+        test_case.verifyNotEqual(temp.stim_subunits(2).filt, ...
+                                 test_net.stim_subunits(2).filt)
+                             
+        % fit both stim subunits w/o auto model
+        temp = test_net.set_fit_params('fit_auto', 0);
+        temp = temp.fit_model('params', data, test_xstim, ...
+                              'indx_tr', 1:10, ...
+                              'subs', 1:2);
+        test_case.verifyEqual(temp.auto_subunit.w2, test_net.auto_subunit.w2)
+        test_case.verifyNotEqual(temp.stim_subunits(1).filt, ...
+                                 test_net.stim_subunits(1).filt)
+        test_case.verifyNotEqual(temp.stim_subunits(2).filt, ...
+                                 test_net.stim_subunits(2).filt)
+        
+                             
+        % create new model w/ two shared stim subunits
+        test_stim_params = StimSubunit.create_stim_params( ...
+            [test_case.num_lags, test_case.num_xpix, test_case.num_ypix], 1);
+        test_xstim{1} = StimSubunit.create_time_embedding(...
+            randn(test_case.expt_len, test_case.num_xpix*test_case.num_ypix), ...
+            test_stim_params);
+        test_stim_params(2) = StimSubunit.create_stim_params( ...
+            [test_case.num_lags + 5, test_case.num_xpix, test_case.num_ypix], 1);
+        test_xstim{2} = StimSubunit.create_time_embedding(...
+            randn(test_case.expt_len, test_case.num_xpix*test_case.num_ypix), ...
+            test_stim_params(2));
+        test_init_params = RLVM.create_init_params( ...
+            test_stim_params, test_case.num_cells, test_case.num_hid_nodes);
+        test_net = RLVM(test_init_params);
+        test_case.verifyEqual(test_net.fit_params.fit_auto, 1)
+        test_case.verifyEqual(test_net.fit_params.fit_stim_individual, 0)
+        test_case.verifyEqual(test_net.fit_params.fit_stim_shared, 1)
+        
+        % fit auto model w/ both stim subunits
+        temp = test_net.fit_model('params', data, test_xstim, ...
+                                  'indx_tr', 1:10, ...
+                                  'subs', 1:2);
+        test_case.verifyNotEqual(temp.auto_subunit.w2, test_net.auto_subunit.w2)
+        test_case.verifyNotEqual(temp.stim_subunits(1).filt, ...
+                                 test_net.stim_subunits(1).filt)
+        test_case.verifyNotEqual(temp.stim_subunits(2).filt, ...
+                                 test_net.stim_subunits(2).filt)
+                          
     end
     
     function test_hidden_methods(test_case)

@@ -7,10 +7,10 @@ import matlab.unittest.TestSuite
 % path = addpath(genpath(pwd));
 
 % run all test suites located in the 'tests' directory
-results = run(TestSuite.fromFolder('tests'));
+% results = run(TestSuite.fromFolder('tests'));
 
 % run a test suite from 'tests' directory
-% results = run(TestSuite.fromFile('tests/XAutoTests.m'));
+results = run(TestSuite.fromFile('tests/RLVMTests.m'));
 % results = run(TestSuite.fromFile('tests/AutoSubunitTests.m'));
 % results = run(TestSuite.fromFile('tests/StimSubunitTests.m'));
 

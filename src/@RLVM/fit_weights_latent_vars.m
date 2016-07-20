@@ -12,6 +12,9 @@ function net = fit_weights_latent_vars(net, fs)
 %
 % OUTPUTS:
 %   net:                updated RLVM object
+%
+% TODO:
+%   nontarg_g does not work for selectively fitting shared StimSubunits
 
 % ************************** CHECK INPUTS *********************************
 if net.fit_params.fit_auto
@@ -54,6 +57,13 @@ if net.fit_params.fit_stim_individual || net.fit_params.fit_stim_shared
     non_fit_subs = setdiff(1:num_subs, fit_subs);
     x_targets = [net.stim_subunits(fit_subs).x_target];
     mod_signs = [net.stim_subunits(fit_subs).mod_sign];
+elseif ~isempty(net.stim_subunits)
+    % use all stim subunit outputs for model evaluation
+    fit_subs = [];
+    non_fit_subs = 1:length(net.stim_subunits);
+else
+    fit_subs = [];
+    non_fit_subs = [];
 end
 
 % ************************** RESHAPE WEIGHTS ******************************
@@ -105,6 +115,13 @@ else
     num_stim_indxs = 0;
 end
 
+if net.fit_params.fit_stim_shared
+    init_params = [init_params; net.stim_weights(:)];
+    num_stim_weights_indxs = length(net.stim_weights(:));
+    stim_weights_indxs = param_tot + (1:num_stim_weights_indxs);
+    param_tot = param_tot + num_stim_weights_indxs;
+end
+
 % add constant offset to capture mean for each cell
 if net.fit_params.fit_overall_offsets
     init_params = [init_params; net.offsets];
@@ -116,11 +133,15 @@ else
     num_offset_indxs = 0;
 end
     
-% keep track of output from subunits that are not being fit
+% keep track of output from model components that are not being fit
 nontarg_g = zeros(T, net.num_cells);
-% for i = non_fit_subs
-%     nontarg_g = nontarg_g + net.stim_subunit(i).get_model_internals(fs.Xstims);
-% end
+if ~isempty(net.auto_subunit) && ~net.fit_params.fit_auto
+    [~, auto_gint] = net.auto_subunit.get_model_internals(fs.pop_activity);
+    nontarg_g = nontarg_g + auto_gint{2};
+end
+for i = non_fit_subs
+    nontarg_g = nontarg_g + net.stim_subunits(i).get_model_internals(fs.Xstims);
+end
     
 % ************************** FIT MODEL ************************************
 optim_params = net.optim_params;
@@ -143,17 +164,17 @@ if strcmp(optim_params.optimizer, 'minFunc') && ~exist('minFunc', 'file')
 end
 switch optim_params.optimizer
     case 'minFunc'
-        [weights, f, ~, output] = minFunc(obj_fun, init_params, ...
+        [params, f, ~, output] = minFunc(obj_fun, init_params, ...
                                           optim_params);
     case 'fminunc'
-        [weights, f, ~, output] = fminunc(obj_fun, init_params, ...
+        [params, f, ~, output] = fminunc(obj_fun, init_params, ...
                                           optim_params);
   	case 'con'
-        [weights, f, ~, output] = minConf_SPG(obj_fun, init_params, ...
+        [params, f, ~, output] = minConf_SPG(obj_fun, init_params, ...
                                           @(t,b) max(t,0), optim_params);
 end
 
-[~, grad_pen] = objective_fun(weights);
+[~, grad_pen] = objective_fun(params);
 first_order_optim = max(abs(grad_pen));
 if first_order_optim > 1e-2
     warning('First-order optimality: %.3f, fit might not be converged!', ...
@@ -164,23 +185,24 @@ end
 if net.fit_params.fit_auto
     [net.auto_subunit.w1, net.auto_subunit.w2, ...
      net.auto_subunit.b1, net.auto_subunit.b2] = ...
-     net.auto_subunit.get_weights(weights(auto_indxs));
+     net.auto_subunit.get_weights(params(auto_indxs));
  
     net.auto_subunit = net.auto_subunit.set_hidden_order(fs.pop_activity);
 end
 if net.fit_params.fit_stim_individual
     for i = 1:num_fit_subs
-        curr_filt = weights(stim_indxs{i});
+        curr_filt = params(stim_indxs{i});
         net.stim_subunits(fit_subs(i)).filt = ...
             reshape(curr_filt, [], num_cells);
     end
 elseif net.fit_params.fit_stim_shared
     for i = 1:num_fit_subs
-        net.stim_subunits(fit_subs(i)).filt = weights(stim_indxs{i});
+        net.stim_subunits(fit_subs(i)).filt = params(stim_indxs{i});
     end
+    net.stim_weights = params(stim_weights_indxs);
 end
 if net.fit_params.fit_overall_offsets
-    net.offsets = weights(offset_indxs);
+    net.offsets = params(offset_indxs);
 end
 
 % ************************** UPDATE HISTORY *******************************
@@ -188,6 +210,7 @@ curr_fit_details = struct( ...
     'fit_auto', net.fit_params.fit_auto, ...
     'fit_stim_individual', net.fit_params.fit_stim_individual, ...
     'fit_stim_shared', net.fit_params.fit_stim_shared, ...
+    'fit_stim_subunits', fit_subs, ...
     'fit_overall_offsets', net.fit_params.fit_overall_offsets, ...
     'fit_latent_vars', 0, ...
     'fit_weights', 0, ...
@@ -226,11 +249,12 @@ net.fit_history = cat(1, net.fit_history, curr_fit_details);
         for ii = 1:num_fit_subs
             filts{ii} = params(stim_indxs_full{ii});
         end
+        stim_weights = reshape(params(stim_weights_indxs), [], num_cells);
     end
     if net.fit_params.fit_overall_offsets
         offsets = params(offset_indxs);
     else
-        offsets = zeros(num_cells,1);
+        offsets = zeros(num_cells, 1);
     end
     
     % ******************* COMPUTE FUNCTION VALUE **************************
@@ -256,7 +280,7 @@ net.fit_history = cat(1, net.fit_history, curr_fit_details);
             gint(:,ii) = fs.Xstims{x_targets(ii)} * filts{ii};
             fgint(:,ii) = net.stim_subunits(fit_subs(ii)).apply_NL_func(gint(:,ii));
         end
-        G = G + fgint * net.stim_weights;
+        G = G + fgint * stim_weights;
     end
     % cost function and gradient eval wrt predicted output
     pred_activity = net.apply_spk_NL(G);
@@ -273,7 +297,7 @@ net.fit_history = cat(1, net.fit_history, curr_fit_details);
             cost_grad(pred_activity <= net.min_pred_rate) = 0;
     end
     
-    % ******************* COMPUTE GRADIENT ********************************
+    % ******************* COMPUTE GRADIENTS *******************************
     if net.fit_params.fit_auto
         % sparsity penalty eval on hidden layer
         if lambda_sp > 0
@@ -303,7 +327,7 @@ net.fit_history = cat(1, net.fit_history, curr_fit_details);
     
     if net.fit_params.fit_stim_individual
         % initialize LL gradient
-        stim_grad = zeros(num_stim_indxs,1);
+        stim_grad = zeros(num_stim_indxs, 1);
         for ii = 1:num_fit_subs 
             deriv = net.apply_spk_NL_deriv(G).*...
                     net.stim_subunits(fit_subs(ii)).apply_NL_deriv(gint{ii});
@@ -311,10 +335,21 @@ net.fit_history = cat(1, net.fit_history, curr_fit_details);
                 (fs.Xstims{x_targets(ii)})' * (deriv.*cost_grad) * mod_signs(ii), ...
                 [], 1);
         end
+        stim_weights_grad = [];
     elseif net.fit_params.fit_stim_shared
-        error('fit_stim_shared not currently supported')
+        % initialize LL gradient
+        stim_grad = zeros(num_stim_indxs, 1);
+        stim_weights_grad = fgint' * (net.apply_spk_NL_deriv(G).*cost_grad);
+        for ii = 1:num_fit_subs 
+            deriv = net.apply_spk_NL_deriv(G).* ...
+                    (net.stim_subunits(fit_subs(ii)).apply_NL_deriv(gint(:,ii)) * ...
+                    stim_weights(ii,:));
+            stim_grad(stim_indxs{ii}) = sum( ...
+                (fs.Xstims{x_targets(ii)})' * (deriv.*cost_grad) * mod_signs(ii), 2);
+        end
     else
         stim_grad = [];
+        stim_weights_grad = [];
     end
 
     if net.fit_params.fit_overall_offsets
@@ -347,7 +382,7 @@ net.fit_history = cat(1, net.fit_history, curr_fit_details);
         auto_reg_pen = 0;
     end
 
-    if net.fit_params.fit_stim_individual
+    if net.fit_params.fit_stim_individual || net.fit_params.fit_stim_shared
         stim_reg_pen = zeros(num_fit_subs,1);
         stim_reg_pen_grad = zeros(num_stim_indxs,1);
         for ii = 1:num_fit_subs
@@ -356,9 +391,16 @@ net.fit_history = cat(1, net.fit_history, curr_fit_details);
         end
         stim_reg_pen = 0.5*stim_reg_pen'*cellfun(@(x) sum(sum(x.^2)), filts);
         stim_grad = stim_grad / Z + stim_reg_pen_grad;
-    elseif net.fit_params.fit_stim_shared
     else
         stim_reg_pen = 0;
+    end
+    
+    if net.fit_params.fit_stim_shared
+        stim_weights_reg_pen = 0.5 * net.lambda_stim * sum(sum(stim_weights.^2));
+        stim_weights_reg_pen_grad = net.lambda_stim * stim_weights(:);
+        stim_weights_grad = stim_weights_grad(:) / Z + stim_weights_reg_pen_grad;
+    else
+        stim_weights_reg_pen = 0;
     end
     
     if net.fit_params.fit_overall_offsets
@@ -372,8 +414,12 @@ net.fit_history = cat(1, net.fit_history, curr_fit_details);
     
     % ******************* COMBINE *****************************************
     
-    func = cost_func / Z + auto_reg_pen + stim_reg_pen + offset_reg_pen;
-    grad = [auto_grad; stim_grad; offset_grad];
+    func = cost_func / Z + auto_reg_pen ...
+                         + stim_reg_pen ...
+                         + stim_weights_reg_pen ...
+                         + offset_reg_pen;
+                     
+    grad = [auto_grad; stim_grad; stim_weights_grad; offset_grad];
     
     end % internal function
 

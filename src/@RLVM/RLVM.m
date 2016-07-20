@@ -14,6 +14,10 @@ properties
     num_cells
     noise_dist
     spk_NL
+    stim_weights
+    lambda_stim
+    offsets
+    lambda_off
     fit_params          % struct defining the fitting parameters
         % fit_auto
         % fit_stim_individual
@@ -51,8 +55,6 @@ properties
         % r2
         % first_order_opt
         % exit_msg
-    offsets
-    lambda_off
 end
 
 properties (Hidden)
@@ -85,9 +87,9 @@ methods
     function net = RLVM(init_params, varargin)
     % net = RLVM(init_params, kargs) 
     %
-    % constructor function for an RLVM object; sets
-    % properties, including calling AutoSubunit and StimSubunit 
-    % constructors (no regularization is set)
+    % constructor function for an RLVM object; sets properties, including 
+    % calling AutoSubunit and StimSubunit constructors (no regularization 
+    % is set)
     %
     % INPUTS:
     %   init_params:        struct with the following fields
@@ -168,15 +170,19 @@ methods
         if init_params.stim_params(1).num_outputs > 1
             fit_stim_individual = 1;
             fit_stim_shared = 0;
+            net.stim_weights = [];
         elseif init_params.stim_params(1).num_outputs == 1
             fit_stim_individual = 0;
             fit_stim_shared = 1;
+            net.stim_weights = abs(0.1 * randn(num_subunits, ...
+                                               init_params.num_cells));
         else
             error('num_outputs field of stim params must equal num_cells or 1')
         end
     else
         fit_stim_individual = 0;
         fit_stim_shared = 0;
+        net.stim_weights = [];
     end
     if init_params.num_hid_nodes ~= 0     
         fit_auto = 1;
@@ -311,9 +317,12 @@ methods
     % -------------------- SET PROPERTIES ---------------------------------
     
     % model params
+    net.num_cells = init_params.num_cells;
     net.noise_dist = noise_distribution;
     net.spk_NL = spk_nonlinearity;
-    net.num_cells = init_params.num_cells;
+    net.lambda_stim = 0;
+    net.offsets = zeros(init_params.num_cells, 1);
+    net.lambda_off = 0;
     % fit_params
     net.fit_params.fit_auto = fit_auto;
     net.fit_params.fit_stim_individual = fit_stim_individual;
@@ -323,10 +332,7 @@ methods
     % optim_params defaults
     net.optim_params = RLVM.set_init_optim_params(); 
     % fit_history
-    net.fit_history = struct([]);
-    % offsets
-    net.offsets = zeros(init_params.num_cells, 1);
-    net.lambda_off = 0;
+    net.fit_history = struct([]);    
 
     % -------------------- INITIALIZE SUBUNITS ----------------------------
     
@@ -588,20 +594,28 @@ methods
     % subunits.
     %
     % INPUTS:
-    %   reg_target:     string specifying whether to apply the specified
-    %                   reg params to the stim ('stim') or autoencoder 
-    %                   ('auto') model, or to offsets ('off')
+    %   reg_target:     'auto' | 'stim' | 'off' | 'stim_weights'
+    %                   string specifying which model components to apply 
+    %                   the specified reg params to
     %
     %   optional key-value pairs:
     %       'subs', vector
     %           specify set of subunits to apply the new reg_params
     %           to if applying reg_params to stim model (default = ALL)
     %       'lambda_type', scalar
-    %           stim lambda_types:
-    %           'l2' | 'd2t' | 'd2x' | 'd2xt'
-    %           auto lambda_types:
+    %           'auto' lambda_types:
     %           'l2_weights' | 'l2_weights1' | 'l2_weights2' | 'l2_biases'
     %           | 'l2_biases1' | 'l2_biases2' | 'l1_hid' | 'd2t_hid'
+    %           
+    %           'stim' lambda_types:
+    %           'l2' | 'd2t' | 'd2x' | 'd2xt'
+    %
+    %           'stim_weights' lambda_types:
+    %           'l2'
+    %
+    %           'off' lambda_types:
+    %           'l2'
+    %
     %           first input is a string specifying the type of 
     %           regularization, followed by a scalar giving the associated 
     %           regularization value, which will be applied to the 
@@ -615,13 +629,16 @@ methods
     %   net: updated RLVM object
     
     % check for appropriate number of inputs
-    assert(ismember(reg_target, {'stim', 'auto', 'off'}), ...
+    assert(ismember(reg_target, {'stim', 'auto', 'off', 'stim_weights'}), ...
         'Must specify which subunit to update')
     assert(mod(length(varargin), 2) == 0, ...
         'Input should be a list of key-value pairs')
     
     % parse inputs
     switch reg_target
+        case 'auto'
+            % update reg_params for auto subunit
+            net.auto_subunit = net.auto_subunit.set_reg_params(varargin{:});
         case 'stim'
             % look for sub_inds; if none specified, the reg_params will be 
             % applied to ALL subunits
@@ -643,9 +660,19 @@ methods
                 net.stim_subunits(sub_inds(i)) = ...
                     net.stim_subunits(sub_inds(i)).set_reg_params(varargin{:}); 
             end
-        case 'auto'
-            % update reg_params for auto subunit
-            net.auto_subunit = net.auto_subunit.set_reg_params(varargin{:});
+        case 'stim_weights'
+            i = 1;
+            while i <= length(varargin)
+                switch lower(varargin{i})
+                    case 'l2'
+                        assert(varargin{i+1} >= 0, ...
+                            'reg value must be nonnegative')
+                        net.lambda_stim = varargin{i+1};
+                    otherwise
+                        error('Invalid input flag');
+                end
+                i = i + 2;
+            end
         case 'off'
             i = 1;
             while i <= length(varargin)
@@ -660,7 +687,7 @@ methods
                 i = i + 2;
             end
         otherwise
-            error('Invalid reg_target; must be ''stim'',''auto'' or ''off''')
+            error('Invalid reg_target; must be auto, stim, off or stim_weights')
     end
     
     end % method
@@ -794,7 +821,11 @@ methods
         stim_reg_pen = ...
             cat(1, stim_reg_pen, net.stim_subunits(i).get_reg_pen());
     end
-
+    % get regularization penalties - stim weights
+    stim_weights_reg_pen = 0.5 * net.lambda_stim * sum(sum(net.stim_weights.^2));
+    % get regularization penalties - offsets
+    off_reg_pen = 0.5 * net.lambda_off * sum(net.offsets.^2);
+    
     % evaluate cost_func and pseudo-r^2
     switch net.noise_dist
         case 'gauss'
@@ -810,9 +841,6 @@ methods
     r2 = 1 - LL./LLnull;
     cost_func = sum(LL) / Z;
     
-    % evaluate reg_pen on offsets
-    off_reg_pen = 0.5 * net.lambda_off * sum(net.offsets.^2);
-
     % put internal generating functions in a struct if desired in output
     if nargout > 2
         mod_internals.auto_gint = auto_gint;
@@ -825,6 +853,7 @@ methods
     if nargout > 3
         mod_reg_pen = struct('auto_reg_pen', auto_reg_pen, ...
                              'stim_reg_pen', stim_reg_pen, ...
+                             'stim_weights_reg_pen', stim_weights_reg_pen, ...
                              'off_reg_pen', off_reg_pen);
     end
 
@@ -909,7 +938,7 @@ methods
                         'Invalid fitting indices')
                     indx_tr = varargin{i+1};
                 case 'subs'
-                    assert(all(ismember(varargin{i+1}, 1:Nsubs)), ...
+                    assert(all(ismember(varargin{i+1}, 1:length(net.stim_subunits))), ...
                         'invalid target subunits specified');
                     fit_subs = varargin{i+1};
                 case 'init_weights'
@@ -1228,7 +1257,7 @@ methods (Static)
         for n = 1:length(stim_params)
             while length(stim_params(n).dims) < 3
                 % pad stim_dims with 1's for bookkeeping
-                stim_params(n).dims = cat(2,stim_params(n).dims,1); 
+                stim_params(n).dims = cat(2, stim_params(n).dims, 1); 
             end
             % used in initializing weights
             stim_params(n).num_cells = num_cells; 
@@ -1243,8 +1272,8 @@ methods (Static)
     while i <= length(varargin)
         switch lower(varargin{i})
             case 'num_subs'
-                assert(num_subs > 0, ...
-                    'must have positive number of subunits')
+                assert(varargin{i+1} >= 0, ...
+                    'must have nonnegative number of subunits')
                 num_subunits = varargin{i+1};
             otherwise
                 error('Invalid input flag');

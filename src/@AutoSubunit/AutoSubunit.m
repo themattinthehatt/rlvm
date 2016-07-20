@@ -147,7 +147,7 @@ methods
                 assert(varargin{i+1} > 0, ...
                     'must provide positive number of hidden nodes')
                 if varargin{i+1} ~= subunit.num_hid_nodes
-                    warning('changing number of hidden nodes; randomly reinitializing weights!')
+%                     warning('changing number of hidden nodes; randomly reinitializing weights!')
                     subunit.num_hid_nodes = varargin{i+1};
                     subunit = subunit.set_init_weights('uniform');
                 end

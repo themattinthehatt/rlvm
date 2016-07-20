@@ -15,7 +15,7 @@ function [net, weights, latent_vars] = fit_alt(net, fs)
 %   net:                updated RLVM object
 
 % ************************** DEFINE DEFAULTS ******************************
-num_iters = 10;
+num_iters = 15;
 verbose = 0;
 if verbose
     fprintf('Beginning alternating fitting routine\n')
@@ -87,7 +87,7 @@ end
 if strcmp(fs.first_fit, 'weights')
     if verbose
         fprintf('Iter 0:\n')
-        fprintf('\tFitting weights\n')
+        fprintf('\tFitting weights...\n')
     end
     net = net.fit_weights(fs);
 end
@@ -114,13 +114,12 @@ while iter <= num_iters
     % print updates
     if verbose
         [~, cost_func] = net.get_model_eval(fs.pop_activity, fs.Xstims);
-        fprintf('\tCost function = %g', cost_func)
+        fprintf('\tCost function = %g\n', cost_func)
     end
     
     iter = iter + 1;
     
 end
-fprintf('\n')
 
 % output
 weights = net.auto_subunit.w2';
