@@ -22,6 +22,8 @@
 %   - (DONE 07/13/16) fit_weights: redo check_inputs
 %   - (DONE 07/14/16) fit_model - check for minFunc
 %   - (DONE 07/19/16) fit_model - allow model subunits to be held constant
+%   - (DONE 07/20/16) fit_model - optimize shared subunit func/grad calcs
+%   - (DONE 07/20/16) display_stim_filts - now works for shared subunits
 %
 % Unit Testing
 %   - (DONE 07/12/16) RLVM
@@ -55,17 +57,13 @@
 %
 % TODO much later in the future
 %   - reg matrices for stim subunits (only l2 supported now for fitting)
-%   - display_stim_filts: move into StimSubunit
-%   - display_stim_filts: display multiple cells properly
-%   - display_stim_filts: what to do w/ shared StimSubunits?
 %   - perhaps add a regpath to the auto model (but not stim+auto models)
-%   - maybe look at optimizing the objective function implementation(s)
 %   - put in a lib folder with mark schmidt's minFunc
 %   - add stim subunits to fit_weights and fit_latent_vars
 %   - fit_alt - break data into smaller time chunks, fit, stitch together
 %   - fit_alt - make num_iters/verbose options in optim_params?
 %   - unit testing for fit_weights/fit_latent_states/fit_alt
-%   - turn 'fit_subs' option to fit_model into a field of fit_params
+%   - turn 'fit_subs' option to fit_model into a field of fit_params?
 %
 %
 % VERSION 2.0 UPDATES

@@ -792,7 +792,7 @@ methods
                 [stim_fgint(:,i), stim_gint(:,i)] = ...
                     net.stim_subunits(i).get_model_internals(Xstims);
             end
-            G = G + stim_fgint{i} * net.stim_weights;
+            G = G + stim_fgint * net.stim_weights;
         elseif net.stim_subunits(1).stim_params.num_outputs == net.num_cells
             stim_gint = cell(num_subunits,1);
             stim_fgint = cell(num_subunits,1);
@@ -1038,27 +1038,110 @@ end
 %% ********************* display methods **********************************
 methods
     
-    function fig_handle = disp_stim_filts(net, cell_num)
+    function fig_handle = disp_stim_filts(net, varargin)
     % net = net.disp_stim_filts(cell_num)
     %
     % Plots stimulus filters of various subunits for a given cell
     %
     % INPUTS:
-    %	cell_num:			cell number for plotting
+    %	cell_num:			optional; cell number for plotting
     %
     % OUTPUTS:
     %   fig_handle:         handle of created figure
 
+    % check inputs
+    if ~isempty(varargin)
+        assert(ismember(varargin{1}, 1:net.num_cells), ...
+            'Invalid cell index')
+        cell_num = varargin{1};
+    else
+        cell_num = [];
+    end
+    
     num_subs = length(net.stim_subunits);
+    max_cols = 5;
+    rows = ceil(num_subs/max_cols);
+    cols = min(max_cols, num_subs);
 
     % set figure position
     fig_handle = figure;
     set(fig_handle,'Units','normalized');
     set(fig_handle,'OuterPosition',[0.05 0.55 0.6 0.4]); %[left bottom width height]
 
-    for i = 1:num_subs
-        subplot(1,num_subs,i)
-        net.stim_subunits(i).disp_filt(cell_num);
+    if net.stim_subunits(1).stim_params.num_outputs == net.num_cells
+        % individual stimulus
+        assert(~isempty(cell_num), ...
+            'Must provide cell number for individual subunit models')
+        for i = 1:num_subs
+            subplot(rows, cols, i)
+            net.stim_subunits(i).disp_filt(i, cell_num);
+        end
+    elseif net.stim_subunits(1).stim_params.num_outputs == 1
+        % shared stimulus
+        if isempty(varargin)
+            % plot filters for each subunit and stim_weights
+            counter = 0;
+            for i = 1:num_subs
+                counter = counter + 1;
+                if mod(counter, cols+1) == 0
+                    counter = counter + 1;
+                end
+                subplot(rows, cols+1, counter)
+                net.stim_subunits(i).disp_filt(i);
+            end
+            extra_slots = (cols+1):(cols+1):rows*(cols+1);
+            subplot(rows, cols+1, extra_slots)
+            imagesc(net.stim_weights', ...
+                [-max(abs(net.stim_weights(:))), max(abs(net.stim_weights(:)))]);
+            title('Stim Weights', 'FontSize', 12)
+            xlabel('Subunit Number')
+            ylabel('Cell Number')
+            set(gca,'YDir', 'normal', 'YAxisLocation', 'right')
+            colormap(jet);
+        else
+            % plot filters for each subunit, weighted by stim_weights
+            if strcmp([net.stim_subunits.NL_type], repmat('lin', 1, num_subs))
+                % if subunits are all linear, plot their weighted combo
+                weighted_combo = zeros(size(net.stim_subunits(1).filt));
+                counter = 0;
+                for i = 1:num_subs
+                    counter = counter + 1;
+                    if mod(counter, cols+1) == 0
+                        counter = counter + 1;
+                    end
+                    subplot(rows, cols+1, counter)
+                    net.stim_subunits(i).disp_filt(i, [], net.stim_weights(i, cell_num));
+                    weighted_combo = weighted_combo ...
+                                   + net.stim_weights(i, cell_num) ...
+                                   * net.stim_subunits(i).filt;
+                end
+                % right now this only works for 2d filters of same size
+                extra_slots = (cols+1):(cols+1):rows*(cols+1);
+                subplot(rows, cols+1, extra_slots)
+                imagesc(reshape(weighted_combo, net.stim_subunits(1).stim_params.dims), ...
+                    [-max(abs(weighted_combo(:))), max(abs(weighted_combo(:)))]);
+                title('Weighted Combo', 'FontSize', 12)
+                set(gca,'YDir', 'normal')
+                colormap(jet);
+                % go back through and put all filters on same scale
+                counter = 0;
+                for i = 1:num_subs
+                    counter = counter + 1;
+                    if mod(counter, cols+1) == 0
+                        counter = counter + 1;
+                    end
+                    subplot(rows, cols+1, counter)
+                    set(gca, 'clim', [-max(abs(weighted_combo(:))), ...
+                                       max(abs(weighted_combo(:)))]);
+                end
+            else
+                % just plot weighted subunits
+                for i = 1:num_subs
+                    subplot(rows, cols, i)
+                    net.stim_subunits(i).disp_filt(i, [], net.stim_weights(i, cell_num));
+                end
+            end
+        end
     end
     
     end % method

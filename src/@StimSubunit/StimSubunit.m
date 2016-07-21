@@ -310,41 +310,67 @@ end
 %% ********************  display methods **********************************
 methods
     
-    function [] = disp_filt(subunit, cell_num)
-    % subunit.display_filt(cell_num)
+    function [] = disp_filt(subunit, sub_num, varargin)
+    % subunit.display_filt(<cell_num>, <weight>)
     %
     % Plots stimulus filter of the given subunit for the input cell number
     %
     % INPUTS:
-    %   cell_num:   indices of cells to plot 
+    %   sub_num:    for titles
+    %   cell_num:   optional; indices of cells to plot (used for plotting
+    %               individual stim subunits)
+    %   weight:     optional; weight to multiply filter by (used for
+    %               plotting shared stim subunits)
     %
     % OUTPUTS:
     %   fig_handle: figure handle of output
 
     % check inputs
-    assert(all(ismember(cell_num, 1:size(subunit.filt, 2))), ...
-        'Invalid cell indices')
-
-    filt_ = subunit.filt(:,cell_num);
-
+    if ~isempty(varargin)
+        if length(varargin) == 2
+            % cell index
+            if ~isempty(varargin{1})
+                assert(all(ismember(varargin{1}, 1:size(subunit.filt, 2))), ...
+                    'Invalid cell index')
+                filt_ = subunit.filt(:,cell_num);
+            else
+                filt_ = subunit.filt;
+            end
+            % weight
+            weight = varargin{2};
+        elseif length(varargin) == 1
+            % cell index
+            assert(all(ismember(varargin{1}, 1:size(subunit.filt, 2))), ...
+                'Invalid cell index')
+            filt_ = subunit.filt(:,cell_num);
+            % weight
+            weight = 1;
+        else
+            error('Too many inputs')
+        end
+    else
+        filt_ = subunit.filt;
+        weight = 1;
+    end
+    
     if subunit.stim_params.dims(1) == 1
         % only spatial component
         if prod(subunit.stim_params.dims(2:3)) == 1
             % only a single parameter
-            stem(filt_)
-            title(sprintf('Cell %i', cell_num), 'FontSize', 12)
+            stem(weight * filt_)
+            title(sprintf('Subunit %i', sub_num), 'FontSize', 12)
             ylabel('param value')
         elseif subunit.stim_params.dims(3) == 1
             % one spatial dim
-            plot(filt_)
-            title(sprintf('Cell %i', cell_num), 'FontSize', 12)
+            plot(weight * filt_)
+            title(sprintf('Subunit %i', sub_num), 'FontSize', 12)
             xlabel('x\_pix')
         else
             % two spatial dims
-            filt_ = reshape(filt_, subunit.stim_params.dims(2), ...
-                                   subunit.stim_params.dims(3));
+            filt_ = reshape(weight * filt_, subunit.stim_params.dims(2), ...
+                                            subunit.stim_params.dims(3));
             imagesc(filt_, [-max(abs(filt_(:))), max(abs(filt_(:)))]);
-            title(sprintf('Cell %i',cell_num), 'FontSize', 12)
+            title(sprintf('Subunit %i', sub_num), 'FontSize', 12)
             xlabel('y\_pix')
             ylabel('x\_pix')
             set(gca,'YDir', 'normal')
@@ -354,15 +380,15 @@ methods
         % temporal component
         if prod(subunit.stim_params.dims(2:3)) == 1
             % only temporal component
-            plot(filt_)
-            title(sprintf('Cell %i', cell_num), 'FontSize', 12)
+            plot(weight * filt_)
+            title(sprintf('Subunit %i', sub_num), 'FontSize', 12)
             xlabel('lags')
         elseif subunit.stim_params.dims(3) == 1
             % one spatial dim
-            filt_ = reshape(filt_, subunit.stim_params.dims(1), ...
-                                   subunit.stim_params.dims(2));
+            filt_ = reshape(weight * filt_, subunit.stim_params.dims(1), ...
+                                            subunit.stim_params.dims(2));
             imagesc(filt_, [-max(abs(filt_(:))), max(abs(filt_(:)))]);
-            title(sprintf('Cell %i', cell_num), 'FontSize', 12)
+            title(sprintf('Subunit %i', sub_num), 'FontSize', 12)
             xlabel('x\_pix')
             ylabel('lags')
             set(gca,'YDir', 'normal')

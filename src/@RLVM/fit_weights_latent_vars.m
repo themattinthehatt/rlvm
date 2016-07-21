@@ -15,6 +15,7 @@ function net = fit_weights_latent_vars(net, fs)
 %
 % TODO:
 %   nontarg_g does not work for selectively fitting shared StimSubunits
+%   (need to use/fit only part of stim_weights)
 
 % ************************** CHECK INPUTS *********************************
 if net.fit_params.fit_auto
@@ -66,6 +67,18 @@ else
     non_fit_subs = [];
 end
 
+if net.fit_params.fit_stim_shared
+    % decide if we can speed up function/gradient evaluations
+    if strcmp([net.stim_subunits(:).NL_type], ...
+            repmat(net.stim_subunits(1).NL_type, 1, num_subs)) ...
+            && length(unique([net.stim_subunits(:).mod_sign])) == 1 ...
+            && length(unique([net.stim_subunits(:).x_target])) == 1
+        use_batch_calc = 1;
+    else
+        use_batch_calc = 0;
+    end
+end
+
 % ************************** RESHAPE WEIGHTS ******************************
 init_params = [];
 param_tot = 0;
@@ -105,10 +118,10 @@ if net.fit_params.fit_stim_individual || net.fit_params.fit_stim_shared
         filt_lens(i) = length(curr_filt);
         % param indices into full param vector
         stim_indxs_full{i} = param_tot + (1:filt_lens(i));
+        param_tot = param_tot + filt_lens(i);
         % param indices into param vector just assoc'd w/ subunit's filters
         stim_indxs{i} = num_stim_indxs + (1:filt_lens(i));
         num_stim_indxs = num_stim_indxs + filt_lens(i);
-        param_tot = param_tot + filt_lens(i);
     end
 else
     stim_indxs = [];
@@ -140,7 +153,8 @@ if ~isempty(net.auto_subunit) && ~net.fit_params.fit_auto
     nontarg_g = nontarg_g + auto_gint{2};
 end
 for i = non_fit_subs
-    nontarg_g = nontarg_g + net.stim_subunits(i).get_model_internals(fs.Xstims);
+    nontarg_g = nontarg_g + net.stim_subunits(i).mod_sign * ...
+                       net.stim_subunits(i).get_model_internals(fs.Xstims);
 end
     
 % ************************** FIT MODEL ************************************
@@ -191,15 +205,15 @@ if net.fit_params.fit_auto
 end
 if net.fit_params.fit_stim_individual
     for i = 1:num_fit_subs
-        curr_filt = params(stim_indxs{i});
+        curr_filt = params(stim_indxs_full{i});
         net.stim_subunits(fit_subs(i)).filt = ...
             reshape(curr_filt, [], num_cells);
     end
 elseif net.fit_params.fit_stim_shared
     for i = 1:num_fit_subs
-        net.stim_subunits(fit_subs(i)).filt = params(stim_indxs{i});
+        net.stim_subunits(fit_subs(i)).filt = params(stim_indxs_full{i});
     end
-    net.stim_weights = params(stim_weights_indxs);
+    net.stim_weights = reshape(params(stim_weights_indxs), [], num_cells);
 end
 if net.fit_params.fit_overall_offsets
     net.offsets = params(offset_indxs);
@@ -275,10 +289,15 @@ net.fit_history = cat(1, net.fit_history, curr_fit_details);
             G = G + fgint{ii} * mod_signs(ii);
         end
     elseif net.fit_params.fit_stim_shared
-        % loop over the subunits and compute the generating signals
-        for ii = 1:num_fit_subs 
-            gint(:,ii) = fs.Xstims{x_targets(ii)} * filts{ii};
-            fgint(:,ii) = net.stim_subunits(fit_subs(ii)).apply_NL_func(gint(:,ii));
+        if use_batch_calc
+            gint = fs.Xstims{x_targets(1)} * [filts{:}];
+            fgint = net.stim_subunits(fit_subs(1)).apply_NL_func(gint);
+        else
+            % loop over the subunits and compute the generating signals
+            for ii = 1:num_fit_subs 
+                gint(:,ii) = fs.Xstims{x_targets(ii)} * filts{ii};
+                fgint(:,ii) = net.stim_subunits(fit_subs(ii)).apply_NL_func(gint(:,ii));
+            end
         end
         G = G + fgint * stim_weights;
     end
@@ -328,24 +347,37 @@ net.fit_history = cat(1, net.fit_history, curr_fit_details);
     if net.fit_params.fit_stim_individual
         % initialize LL gradient
         stim_grad = zeros(num_stim_indxs, 1);
+        residual = net.apply_spk_NL_deriv(G).*cost_grad;
         for ii = 1:num_fit_subs 
-            deriv = net.apply_spk_NL_deriv(G).*...
+            deriv = residual.* ...
                     net.stim_subunits(fit_subs(ii)).apply_NL_deriv(gint{ii});
             stim_grad(stim_indxs{ii}) = reshape( ...
-                (fs.Xstims{x_targets(ii)})' * (deriv.*cost_grad) * mod_signs(ii), ...
+                (fs.Xstims{x_targets(ii)})' * deriv * mod_signs(ii), ...
                 [], 1);
         end
         stim_weights_grad = [];
     elseif net.fit_params.fit_stim_shared
         % initialize LL gradient
         stim_grad = zeros(num_stim_indxs, 1);
-        stim_weights_grad = fgint' * (net.apply_spk_NL_deriv(G).*cost_grad);
-        for ii = 1:num_fit_subs 
-            deriv = net.apply_spk_NL_deriv(G).* ...
-                    (net.stim_subunits(fit_subs(ii)).apply_NL_deriv(gint(:,ii)) * ...
-                    stim_weights(ii,:));
-            stim_grad(stim_indxs{ii}) = sum( ...
-                (fs.Xstims{x_targets(ii)})' * (deriv.*cost_grad) * mod_signs(ii), 2);
+        residual = net.apply_spk_NL_deriv(G).*cost_grad;
+        stim_weights_grad = fgint' * residual;
+        if use_batch_calc
+            % only when all subunits are same; empirically, this method is
+            % ~20% faster with T = 16000, num_cells = 375, num_subs = 10
+            stim_weights = reshape(stim_weights, 1, num_subs, num_cells);
+            residual = reshape(residual, [], 1, num_cells);
+            temp1 = bsxfun(@times, net.stim_subunits(fit_subs(1)).apply_NL_deriv( ...
+                                  gint), stim_weights); 
+            temp2 = fs.Xstims{1}' * sum(bsxfun(@times, temp1, residual), 3);        
+            stim_grad([stim_indxs{:}]) = temp2(:);
+        else
+            for ii = 1:num_fit_subs 
+                deriv = residual .* ...
+                        (net.stim_subunits(fit_subs(ii)).apply_NL_deriv(gint(:,ii)) * ...
+                        stim_weights(ii,:));
+                stim_grad(stim_indxs{ii}) = sum( ...
+                    (fs.Xstims{x_targets(ii)})' * deriv * mod_signs(ii), 2);
+            end
         end
     else
         stim_grad = [];
@@ -404,8 +436,8 @@ net.fit_history = cat(1, net.fit_history, curr_fit_details);
     end
     
     if net.fit_params.fit_overall_offsets
-        offset_reg_pen = 0.5*lambda_off*sum(offsets.^2);
-        offset_reg_pen_grad = lambda_off*offsets;
+        offset_reg_pen = 0.5 * lambda_off * sum(offsets.^2);
+        offset_reg_pen_grad = lambda_off * offsets;
         offset_grad = offset_grad / Z + offset_reg_pen_grad;
     else
         offset_reg_pen = 0;

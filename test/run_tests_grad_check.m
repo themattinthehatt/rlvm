@@ -13,14 +13,14 @@
 verbose = 1;
 
 % select tests to run
-tests.auto = 0;
-tests.stim_ind = 0;
+tests.auto = 1;
+tests.stim_ind = 1;
 tests.stim_sh = 1;
-tests.auto_stim_ind = 0;
-tests.auto_stim_sh = 0;
+tests.auto_stim_ind = 1;
+tests.auto_stim_sh = 1;
 
 % define all model options
-noise_models = {'poiss'};
+noise_models = {'gauss', 'poiss'};
 
 auto_NLtypes = {'lin', 'relu', 'sigmoid', 'softplus'};
 auto_regs_1 = {'l2_biases', 'l2_weights'};
