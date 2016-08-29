@@ -22,7 +22,7 @@ properties
       % rng_state
       % auto_init_filt
     latent_vars    % matrix of latent variable states when inferring them 
-                   % (before hidden unit activation function)
+                   % (after hidden unit activation function)
 end
 
 properties (Hidden) % inherited from RLVM

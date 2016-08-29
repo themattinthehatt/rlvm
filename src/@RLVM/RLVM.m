@@ -50,6 +50,7 @@ properties
         % init_params
         %   rng_state
         %   auto_init_filt
+        % latent vars
     fit_history         % struct array that saves result of each fitting step
         % fit_type
         % r2
