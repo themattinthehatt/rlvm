@@ -15,8 +15,8 @@ function [net, weights, latent_vars] = fit_alt(net, fs)
 %   net:                updated RLVM object
 
 % ************************** DEFINE DEFAULTS ******************************
-num_iters = 15;
-verbose = 0;
+num_iters = 10;
+verbose = 1;
 if verbose
     fprintf('Beginning alternating fitting routine\n')
 end
