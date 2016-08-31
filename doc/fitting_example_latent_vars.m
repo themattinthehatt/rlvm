@@ -1,30 +1,39 @@
+% This script shows how to use the rlvm to infer latent variables from
+% simulated neural population activity. First an autoencoder is fit to the
+% data to produce the initial estimates of the latent variables and the
+% coupling matrix from latent variables to individual neurons. Then, given
+% the coupling matrix, the latent variables are fit using a smoothing
+% prior.
+
 %% load data
 
 % create simulated data that only contains activity due to shared inputs
 % (latent variables), i.e. no stimulus responses
 data_struct = createSimData(0, 1);
 
+% fit normalized 2p data
+data = data_struct.data_2p;
+data = bsxfun(@rdivide, data, std(data));
+
 %% fit coupling weights and latent vars using the autoencoder (2-photon)
 
-% model: yhat = f(w2 * g(w1 * y + b1) + b2)
+% model: yhat = F[w2 * g(w1 * y + b1) + b2]
 % - g() relu (non-negative latent variables)
-% - f() linear
+% - F() linear
 % - w1 = w2' (weight-tying)
 
-% fit 2p data
-data = data_struct.data_2p;
-
-% construct initial model
+% initialize model parameters
 init_params = RLVM.create_init_params( ...
-            [], ...                     % no stimulus model matrix
+            [], ...                     % no stimulus model parameters
             size(data, 2), ...          % number of neurons
             data_struct.lvs.num_lvs);   % number of latent vars to fit
-        
+
+% construct initial model
 net = RLVM(init_params, ...
             'noise_dist', 'gauss', ...  % gaussian noise dist for 2p data
             'act_func_hid', 'relu', ... % g() is relu
-            'spk_NL', 'lin', ...        % f() is linear
-            'weight_tie', 1);           % weight-tie constraint
+            'weight_tie', 1, ...        % weight-tie constraint
+            'spk_NL', 'lin');           % F() is linear
 
 % set regularization parameters
 net = net.set_reg_params('auto', ...    

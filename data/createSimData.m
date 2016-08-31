@@ -119,7 +119,7 @@ if sim_stim
     
     % bring population rates up so something reasonable pops out of the
     % poisson random number generator
-    population_rates = 3 * population_rates;
+    population_rates = 6 * population_rates;
 
 end
 
@@ -148,7 +148,7 @@ if sim_lvs
     thresh = 3;
     X = abs(X);
     X(X < thresh) = thresh;
-    X = (X - thresh) / 2; % divide by 2 to match magnitude of stim response
+    X = X - thresh;
 
     % create latent states that are convolved w/ calcium kernel
     Xsmooth = zeros(T,num_lvs);
@@ -206,10 +206,13 @@ data_struct.meta.rng_seed = rng_seed;
 data_struct.stim.num_dirs = num_dirs;
 data_struct.stim.num_reps = num_reps;
 data_struct.stim.num_blank_frames = num_blank_frames;
-data_struct.stim.blank_frames = blank_frames;
 data_struct.stim.num_stim_frames = num_stim_frames;
+data_struct.stim.blank_frames = blank_frames;
 data_struct.stim.stim_frames = stim_frames;
 data_struct.stim.epoch_frames = epoch_frames;
+data_struct.stim.curve_widths = curve_widths;
+data_struct.stim.curve_centers = curve_centers;
+data_struct.stim.curve_heights = curve_heights;
 
 data_struct.lvs.num_lvs = num_lvs;
 data_struct.lvs.coupling_mat = coupling_mat;

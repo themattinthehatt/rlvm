@@ -332,7 +332,7 @@ methods
             if ~isempty(varargin{1})
                 assert(all(ismember(varargin{1}, 1:size(subunit.filt, 2))), ...
                     'Invalid cell index')
-                filt_ = subunit.filt(:,cell_num);
+                filt_ = subunit.filt(:,varargin{1});
             else
                 filt_ = subunit.filt;
             end
@@ -342,7 +342,7 @@ methods
             % cell index
             assert(all(ismember(varargin{1}, 1:size(subunit.filt, 2))), ...
                 'Invalid cell index')
-            filt_ = subunit.filt(:,cell_num);
+            filt_ = subunit.filt(:,varargin{1});
             % weight
             weight = 1;
         else
