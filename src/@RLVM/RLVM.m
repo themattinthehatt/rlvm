@@ -1040,7 +1040,7 @@ end
 methods
     
     function fig_handle = disp_stim_filts(net, varargin)
-    % net = net.disp_stim_filts(cell_num)
+    % net = net.disp_stim_filts(<cell_num>)
     %
     % Plots stimulus filters of various subunits for a given cell
     %
@@ -1146,6 +1146,40 @@ methods
     end
     
     end % method
+    
+    
+    function [sorted_indxs, sorted_weights, fig_handle] = ...
+                                disp_sorted_weights(net, varargin)
+    % [sorted_weights, sorted_indxs, fig_handle] = 
+    %                           net.disp_sorted_weights(<sorted_order>)
+    %
+    % Plots AutoSubunit sorted coupling matrix.
+    % Combines AutoSubunit.sort_weights and AutoSubunit.disp_weights
+    %
+    % INPUTS:
+    %   sorted_indxs:       optional; sorted indices
+    %
+    % OUTPUTS:
+    %   sorted_weights:     matrix of sorted weights
+    %   sorted_indxs:       vector of sorted indices
+    %   fig_handle:         handle of created figure
+
+    % check inputs
+    if ~isempty(varargin)
+        assert(length(varargin{1}) == net.num_cells, ...
+            'sorted_indxs of wrong size')
+        sorted_indxs = varargin{1};
+        sorted_weights = net.auto_subunit.w2(:, sorted_indxs)';
+    else
+        [sorted_weights, sorted_indxs] = net.auto_subunit.sort_weights();
+    end
+    
+    fig_handle = figure;
+    myimagesc(sorted_weights);
+    xlabel('Latent vars')
+    ylabel('Neuron #')
+    
+    end
     
 end
 

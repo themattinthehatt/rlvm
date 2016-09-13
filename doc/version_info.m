@@ -8,5 +8,5 @@
 %   - optimization for hidden unit activations given weights
 %   - optimization for weights given hidden unit activations
 %   - shared stimulus subunits
-%	- unit testing framework
+%   - unit testing framework
 %   - improved documentation

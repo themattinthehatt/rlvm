@@ -600,8 +600,8 @@ methods
     end % method
     
     
-    function [sorted_clusters, sorted_indxs] = sort_clusters(subunit, varargin)
-    % [sorted_clusters, sorted_indxs] = subunit.sortClusters(<method>)
+    function [sorted_weights, sorted_indxs] = sort_weights(subunit, varargin)
+    % [sorted_weights, sorted_indxs] = subunit.sort_weights(<method>)
     %
     % Sorts decoding matrix for nice presentation
     %
@@ -679,17 +679,17 @@ methods
 
         thresh = 0.25;
         thresh_indx = 1;
-        sorted_clusters = clusters;
+        sorted_weights = clusters;
         for i = 1:num_clust
             if i ~= 1
                 thresh = 0.1;
             end
             % sort ith cluster
-            vals_to_sort = sorted_clusters(thresh_indx:end,i);
+            vals_to_sort = sorted_weights(thresh_indx:end,i);
             [vals_to_sort,indxs] = sort(vals_to_sort, 1, 'descend');
             %
             shifted_indxs = indxs + thresh_indx - 1;
-            sorted_clusters(thresh_indx:end,:) = sorted_clusters(shifted_indxs,:);
+            sorted_weights(thresh_indx:end,:) = sorted_weights(shifted_indxs,:);
             sorted_indxs(thresh_indx:end) = sorted_indxs(shifted_indxs);
             % find new threshold
             if i ~= num_clust
@@ -743,10 +743,10 @@ methods
         end
     end
 
-    sorted_clusters = clusters(sorted_indxs,:);
+    sorted_weights = clusters(sorted_indxs,:);
 
     % invert so that strongest weights are at top
-    sorted_clusters = flipud(sorted_clusters);
+    sorted_weights = flipud(sorted_weights);
     sorted_indxs = flipud(sorted_indxs);
     
     end % method
