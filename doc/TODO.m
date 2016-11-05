@@ -59,7 +59,6 @@
 %   - reg matrices for stim subunits (only l2 supported now for fitting)
 %   - perhaps add a regpath to the auto model (but not stim+auto models)
 %   - put in a lib folder with mark schmidt's minFunc
-%   - add stim subunits to fit_weights and fit_latent_vars
 %   - fit_alt - break data into smaller time chunks, fit, stitch together
 %   - fit_alt - make num_iters/verbose options in optim_params?
 %   - unit testing for fit_weights/fit_latent_states/fit_alt
@@ -67,8 +66,7 @@
 %
 %
 % VERSION 2.0 UPDATES
-%   - refactor to have StimSubunit, IntLayer (integration layer) and Layer 
-%     classes
+%   - refactor to have StimSubunit and Layer classes
 %   - have LatentLayer be a Layer object, but named/handled differently by 
 %     the RLVM class
 %   - move to RLVM properties/methods?
@@ -80,36 +78,13 @@
 %     in RLVM?
 %   - forget sparsity
 %
-%   - IntLayer (inherits from Layer?)
-%       - Properties
-%           ** hid_weights
-%           ** stim_weights
-%           * biases
-%           * reg_lambdas
-%           * act_func
-%           * num_in_nodes
-%           * num_out_nodes (num_cells or something else)
-%       - Methods
-%           * IntLayer()
-%           * set_act_func
-%           * set_reg_params
-%           * set_init_weights
-%           * get_reg_pen
-%           * get_weights (override Layer method, 2 sets)
-%           * apply_act_func
-%           * apply_act_deriv
-%           * init_reg_lambdas (override Layer method, 2 sets)
-%           * init_reg_lambdas
-%           * set_init_weights_stat (override Layer method, 2 sets)
-%
 %   - Layer
 %       - Properties
 %           * weights
 %           * biases
 %           * reg_lambdas
 %           * act_func
-%           * num_in_nodes
-%           * num_out_nodes
+%           * ext_weights
 %       - Methods
 %           * Layer()
 %           * set_act_func

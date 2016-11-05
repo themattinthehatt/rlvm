@@ -594,8 +594,7 @@ methods
     %   fig_handle: figure handle of output
     
     fig_handle = figure;
-    imagesc(subunit.w2',[-max(abs(subunit.w2(:))),max(abs(subunit.w2(:)))]);
-    colormap(jet);
+    myimagesc(subunit.w2');
     
     end % method
     

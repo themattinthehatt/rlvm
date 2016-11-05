@@ -273,6 +273,8 @@ methods
                 end
                 if length(NL_types) == 1 && num_subunits > 1
                     NL_types = repmat(NL_types,1,num_subunits);
+                elseif num_subunits == 0
+                    
                 elseif length(NL_types) ~= num_subunits
                     error('Invalid number of NL_types')
                 end
