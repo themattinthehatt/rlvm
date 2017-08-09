@@ -13,6 +13,7 @@ data_struct = createSimData(0, 1);
 
 % fit normalized 2p data
 data = data_struct.data_2p;
+data = bsxfun(@rdivide, data, std(data));
 
 %% fit coupling weights and latent vars using the autoencoder (2-photon)
 

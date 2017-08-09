@@ -8,28 +8,29 @@ classdef RLVM
 %   Andrew Ng
 %
 % Author: Matt Whiteway
-%   06/30/16
+%   11/05/16
+
+% TODO
+%   - throw error if num_stim_subs > 0 but no stim_params are provided
+%   - interface with stim subunit in general sucks
+%   - speed up calcualations when all subunits have same nonlinearity
+%   - make what 'integration layer' option is clearer; input layer counts?
+%   - fitting offsets in stim subunit should be default
 
 properties
-    num_cells
-    noise_dist
-    spk_NL
-    stim_weights
-    lambda_stim
-    offsets
-    lambda_off
+    integration_layer
     fit_params          % struct defining the fitting parameters
         % fit_auto
         % fit_stim_individual
         % fit_stim_shared
-        % fit_overall_offsets
-        % deriv_check
+        % noise_dist
     optim_params
         % opt_routine
         % batch_size
         % max_iter
         % display
         % monitor
+        % deriv_check
     stim_subunits       % array of stimulus subunit objects
         % filt
         % NL_type
@@ -40,16 +41,15 @@ properties
         % init_params
         %   rng_state
         %   stim_init_filt
-    auto_subunit        % autoencoder subunit object
-        % w1; w2; b1; b2
-        % num_cells
-        % num_hid_nodes
-        % act_func_hid
-        % weight_tie
+    layers              % array of layer object for autoencoder portion
+        % weights
+        % biases
+        % ext_weights
+        % act_func
         % reg_lambdas
         % init_params
         %   rng_state
-        %   auto_init_filt
+        %   init_weights
         % latent vars
     fit_history         % struct array that saves result of each fitting step
         % fit_type
@@ -59,64 +59,65 @@ properties
 end
 
 properties (Hidden)
-    version = '1.0';    % version number
-    date = date;        % date of fit
-    allowed_noise_dists   = {'gauss', 'poiss'};
-    allowed_spk_NLs       = {'lin', 'relu', 'sigmoid', 'softplus'};
-    allowed_auto_regtypes = {'l2_biases', 'l2_biases1', 'l2_biases',...
-                             'l2_weights', 'l2_weights1', 'l2_weights2',...
-                             'l1_hid' ,'d2t_hid', 'l1_hid_param'};
+    version = '2.0';        % version number
+    date = date;            % date of fit
+    min_pred_rate = 1e-5;   % min val for logs
+    max_g = 30;             % max val for exponentials
+    
+    % user options
+    allowed_noise_dists   = {'gauss', 'poiss', 'bern'};
+    allowed_auto_regtypes = {'l2_weights', 'l2_biases', 'd2t_hid'};
     allowed_auto_NLtypes  = {'lin', 'relu', 'sigmoid', 'softplus'};
     allowed_stim_regtypes = {'l2', 'd2t', 'd2x', 'd2xt'};    
     allowed_stim_NLtypes  = {'lin', 'relu', 'softplus'};
+    allowed_init_types    = {'gauss', 'trunc_gauss', 'uniform', 'orth'};
+    allowed_pretraining   = {'none', 'pca', 'pca-varimax', 'layer'};
     allowed_optimizers    = {'fminunc', 'minFunc', 'con'};
-    min_pred_rate         = 1e-5;   % min val for logs
-    max_g                 = 50;     % max val for exponentials
 end
 
 % methods that are defined in separate files
 methods
-    net = fit_weights_latent_vars(net, fit_struct);
+    net                         = fit_weights_latent_vars(net, fit_struct);
     [net, weights, latent_vars] = fit_weights(net, fit_struct);
     [net, weights, latent_vars] = fit_latent_vars(net, fit_struct);
+    [net, weights, latent_vars] = fit_alt(net, fit_struct)
 end
 
 
 %% ********************* constructor **************************************
 methods
       
-    function net = RLVM(init_params, varargin)
-    % net = RLVM(init_params, kargs) 
+    function net = RLVM(layer_sizes, num_stim_subs, varargin)
+    % net = RLVM(layer_sizes, num_stim_subs, kargs) 
     %
     % constructor function for an RLVM object; sets properties, including 
-    % calling AutoSubunit and StimSubunit constructors (no regularization 
-    % is set)
+    % calling Layer and StimSubunit constructors (no regularization is set)
     %
     % INPUTS:
-    %   init_params:        struct with the following fields
-    %       stim_dims       struct array with each entry 
-    %                       in form [num_lags, num_xpix, num_ypix] or [] if
-    %                       no stimulus model is desired 
-    %       num_cells       number of cells
-    %       num_hid_nodes   number of hidden nodes in autoencoder; [] if no
-    %                       autoencoder model is desired
+    %   layer_sizes:    vector defining number of units in each layer,
+    %                   including input, hidden and output layers
+    %   num_stim_subs:  number of stimulus subunits, whether shared or
+    %                   individual
     %
     %   optional key-value pairs: [defaults]
     %       'noise_dist', string
-    %           ['gauss'] | 'poiss'
+    %           ['gauss'] | 'poiss' | 'bern'
     %           specifies noise distribution for cost function
-    %       'spkNL', string
+    %       'act_funcs', cell array of strings, one for each (non-input)
+    %           layer of the rlvm
     %           ['lin'] | 'relu' | 'sigmoid' | 'softplus'
-    %       'fit_overall_offsets', boolean
-    %           [0] | 1
-    %           specifies whether to fit overall offsets (1) or not (0)
+    %           If all layers share the same act_func, use a single string
+    %       'auto_init', cell array of strings, one for each layer of the
+    %           rlvm
+    %           ['trunc_gauss'] | 'gauss' | 'uniform' | 'orth'
+    %           If all layers share the same auto_init, use a single string
+    %       'int_layer', scalar
+    %           specifies which layer integrates autoencoder input with
+    %           stimulus input (Default: final layer)
     %
-    %       'stim_init_filt', vector or string
-    %           ['gaussian'] | 'uniform' | vector
-    %           a cell array where each entry is either a string specifying
-    %           a random initialization ('gaussian' or 'uniform') or a 
-    %           vector of the appropriate size for the intended x_target 
-    %           [filt_coeffs x 1]
+    %       'stim_params', struct array
+    %           each entry has the form [num_lags, num_xpix, num_ypix] to
+    %           define the dimensions of the stimulus
     %       'mod_signs', +/-1 or vector of +/-1s
     %           [1] | -1
     %           vector of weights that define subunits as exc (+1) or inh 
@@ -133,19 +134,6 @@ methods
     %           subunit will use for fitting; if all subunits share same 
     %           x_target, use single scalar
     %
-    %       'auto_init_filt', string or vector
-    %           ['uniform'] | 'gaussian' | vector of weights
-    %           either a string specifying a random random initialization 
-    %           ('gaussian' or 'uniform') or a vector of the appropriate 
-    %           size [w1(:); w2(:); b1; b2]
-    %       'weight_tie', boolean
-    %           [1] | 0
-    %           1 for weight-tying in autoencoder model, which enforces 
-    %           encoding and decoding weights to be the same; 0 otherwise
-    %       'act_func_hid', string
-    %           ['relu'] | 'lin' | 'sigmoid' | 'softplus'
-    %           activiation function for hidden layer in autoencoder
-    %
     % OUTPUT:
     %   net: initialized RLVM object
     
@@ -154,112 +142,87 @@ methods
         % is important when initializing arrays of objects
         return 
     end
+    
+    assert(length(layer_sizes) > 1, ...
+        'Must specify at least two layers')
     assert(mod(length(varargin), 2) == 0, ...
         'Input should be a list of key-value pairs')
 
-    % CHECK INIT_PARAMS
-    % no error checking for now
-    num_stims = length(init_params.stim_params);
-    num_subunits = init_params.num_subunits;
-
-    % -------------------- DEFINE DEFAULTS --------------------------------
-    
+    % define defaults    
     noise_distribution = 'gauss';
-    spk_nonlinearity = 'lin';
-    % fit_params
-    if ~isempty(init_params.stim_params) 
-        if init_params.stim_params(1).num_outputs > 1
-            fit_stim_individual = 1;
-            fit_stim_shared = 0;
-            net.stim_weights = [];
-        elseif init_params.stim_params(1).num_outputs == 1
-            fit_stim_individual = 0;
-            fit_stim_shared = 1;
-            net.stim_weights = abs(0.1 * randn(num_subunits, ...
-                                               init_params.num_cells));
-        else
-            error('num_outputs field of stim params must equal num_cells or 1')
-        end
-    else
-        fit_stim_individual = 0;
-        fit_stim_shared = 0;
-        net.stim_weights = [];
-    end
-    if init_params.num_hid_nodes ~= 0     
-        fit_auto = 1;
-    else
-        fit_auto = 0; 
-    end 
-    fit_overall_offsets = 0;
-
+    auto_init_filt = repmat({'trunc_gauss'}, 1, length(layer_sizes)-1);
+    act_funcs = repmat({'relu'}, 1, length(layer_sizes)-1);
+    act_funcs{end} = 'lin'; % for 'gauss' noise dist default
+    stim_params = [];
+    int_layer = [];
+    
     % stim_subunit - default is gaussian noise, all subunits excitatory and
     % use first target
-    stim_init_filts = repmat({'gaussian'}, 1, num_subunits);
-    mod_signs = ones(1, num_subunits);                      
-    NL_types = repmat({'lin'}, 1, num_subunits);             
-    if num_subunits ~= num_stims
-        x_targets = ones(1,num_subunits);   % same target for each subunit
-    else
-        x_targets = 1:num_subunits;         % one subunit per stimulus
-    end
-
-    % auto_subunit
-    auto_init_filt = 'uniform'; % initialize with gaussian noise
-    weight_tie = 1;             % weight tying
-    act_func_hid = 'relu';      % relu default 
-
+    stim_init_weights = repmat({'gauss'}, 1, num_stim_subs);
+    mod_signs = ones(1, num_stim_subs);                      
+    NL_types = repmat({'lin'}, 1, num_stim_subs);  
+    x_targets = ones(1,num_stim_subs);
+   
+    
     % -------------------- PARSE INPUTS -----------------------------------
     
     i = 1;
     while i <= length(varargin)
         switch lower(varargin{i})
             
+            % layers
             case 'noise_dist'
                 assert(ismember(varargin{i+1}, net.allowed_noise_dists),...
                     'Invalid noise distribution')
                 noise_distribution = varargin{i+1};
-            case 'spk_nl'
-                assert(ismember(varargin{i+1}, net.allowed_spk_NLs),...
-                    'Invalid spiking nonlinearity')
-                spk_nonlinearity = varargin{i+1};
-            case 'fit_overall_offsets'
-                assert(ismember(varargin{i+1}, [0,1]), ...
-                    'fit_overall_offsets option must be set to 0 or 1')
-                fit_overall_offsets = varargin{i+1};
+            case 'act_funcs'
+                assert(all(ismember(varargin{i+1}, net.allowed_auto_NLtypes)), ...
+                    'Invalid layer nonlinearities')
+                act_funcs = varargin{i+1};
+                % if act_funcs is specified as a single string, default to 
+                % using this act_func for all layers
+                if ~iscell(act_funcs) && ischar(act_funcs)
+                    act_funcs = cellstr(act_funcs);
+                end
+                if length(act_funcs) == 1 && length(layer_sizes) > 2
+                    act_funcs = repmat(act_funcs,1,length(layer_sizes)-1);
+                elseif length(act_funcs) ~= length(layer_sizes)-1
+                    error('Invalid number of act_funcs')
+                end
+            case 'auto_init'
+                assert(all(ismember(varargin{i+1}, net.allowed_init_types)), ...
+                    'Invalid weight init types')
+                auto_init_filt = varargin{i+1};
+                % if auto_init_filt is specified as a single string, 
+                % default to using this auto_init_filt for all layers
+                if ~iscell(auto_init_filt) && ischar(auto_init_filt)
+                    auto_init_filt = cellstr(auto_init_filt);
+                end
+                if length(auto_init_filt) == 1 && length(layer_sizes) > 2
+                    auto_init_filt = repmat(auto_init_filt,1,length(layer_sizes)-1);
+                elseif length(auto_init_filt) ~= length(layer_sizes)-1
+                    error('Invalid number of auto_inits')
+                end
+            case 'int_layer'
+                assert(varargin{i+1} > 0 && ...
+                    varargin{i+1} <= length(layer_sizes),...
+                    'Invalid integration layer specified')
+                int_layer = varargin{i+1};
 
             % stim_subunit
-            case 'stim_init_filts'
-                assert(iscell(varargin{i+1}), ...
-                    '''stim_init_filt'' must be a cell array of strings or vectors')
-                if all(cellfun(@(x) ischar(x), varargin{i+1}))
-                    assert(all(ismember(varargin{i+1}, {'gaussian', 'uniform'})), ...
-                        'Invalid random init option')
-                    stim_init_filts = varargin{i+1};
-                    % if stim_init_filts is specified as a single string, 
-                    % default to using this stim_init_filts for all 
-                    % subunits
-                    if length(stim_init_filts) == 1 && num_subunits > 1
-                        stim_init_filts = ...
-                            repmat(stim_init_filts, 1, num_subunits); 
-                    elseif length(stim_init_filts) ~= num_subunits
-                        error('Invalid number of stim_init_filts')
-                    end
-                elseif all(cellfun('isreal', varargin{i+1}))
-                    % still need to make sure dims match; do in StimSubunit
-                    % construtor
-                    stim_init_filts = varargin{i+1}; 
-                else
-                    error('''stim_init_filt'' must be a cell array of strings or vectors')
-                end
+            case 'stim_params'
+                assert(~isempty(varargin{i+1}), ...
+                    'Invalid stim param struct')
+                stim_params = varargin{i+1};
             case 'mod_signs'
                 assert(all(ismember(varargin{i+1},[-1,1])),...
-                'Invalid mod_sign')
+                    'Invalid mod_sign')
                 mod_signs = varargin{i+1};
                 % if mod_signs is specified as a single number, default to
                 % using this mod_sign for all subunits
-                if length(mod_signs) == 1 && num_subunits > 1
-                    mod_signs = repmat(mod_signs,1,num_subunits); 
-                elseif length(mod_signs) ~= num_subunits
+                if length(mod_signs) == 1 && num_stim_subs > 1
+                    mod_signs = repmat(mod_signs,1,num_stim_subs); 
+                elseif length(mod_signs) ~= num_stim_subs
                     error('Invalid number of mod_signs')
                 end
             case 'nl_types'
@@ -271,96 +234,104 @@ methods
                 if ~iscell(NL_types) && ischar(NL_types)
                     NL_types = cellstr(NL_types);
                 end
-                if length(NL_types) == 1 && num_subunits > 1
-                    NL_types = repmat(NL_types,1,num_subunits);
-                elseif num_subunits == 0
+                if length(NL_types) == 1 && num_stim_subs > 1
+                    NL_types = repmat(NL_types,1,num_stim_subs);
+                elseif num_stim_subs == 0
                     
-                elseif length(NL_types) ~= num_subunits
+                elseif length(NL_types) ~= num_stim_subs
                     error('Invalid number of NL_types')
                 end
             case 'x_targets'
-                assert(all(ismember(varargin{i+1}, 1:num_stims)),...
-                    'Invalid x_target')
+%                 assert(all(ismember(varargin{i+1}, 1:num_stims)),...
+%                     'Invalid x_target')
                 x_targets = varargin{i+1};
                 % if x_targets is specified as a single number, default to
                 % using this x_target for all subunits
-                if length(x_targets) == 1 && num_subunits > 1
-                    x_targets = repmat(x_targets, 1, num_subunits); 
-                elseif length(x_targets) ~= num_subunits
+                if length(x_targets) == 1 && num_stim_subs > 1
+                    x_targets = repmat(x_targets, 1, num_stim_subs); 
+                elseif length(x_targets) ~= num_stim_subs
                     error('Invalid number of x_targets')
                 end
-                
-            % auto_subunit
-            case 'auto_init_filt'
-                if ischar(varargin{i+1})
-                    assert(ismember(varargin{i+1}, {'gaussian', 'uniform'}), ...
-                        'Invalid random init option')
-                    auto_init_filt = varargin{i+1};
-                elseif isvector(varargin{i+1})
-                    % still need to make sure dims match; do in AutoSubunit
-                    % construtor
-                    auto_init_filt = varargin{i+1}; 
-                else
-                    error('''auto_init_filt'' must be a string or a vector')
-                end
-            case 'weight_tie'
-                assert(ismember(varargin{i+1}, [0,1]),...
-                    'weight_tie option must be 0 or 1')
-                weight_tie = varargin{i+1};
-            case 'act_func_hid'
-                assert(ismember(varargin{i+1}, net.allowed_auto_NLtypes), ...
-                    'Invalid auto activation function')
-                act_func_hid = varargin{i+1};
             otherwise
                 error('Invalid input flag');
         end
         i = i + 2;
     end
-
+    
+    % define fit_params defaults
+    if ~isempty(stim_params)
+        % simple check: if the number of stim subs is an integer multiple
+        % of the number of inputs, then we're probably fitting individual
+        % stimulus subunits for each cell
+        if mod(stim_params.num_outputs, layer_sizes(end)) == 0 && ...
+                layer_sizes(end) ~= 1
+            fit_stim_individual = 1;
+            fit_stim_shared = 0;
+        else
+            fit_stim_individual = 0;
+            fit_stim_shared = 1;
+        end
+    else
+        fit_stim_individual = 0;
+        fit_stim_shared = 0;
+    end
+    if length(layer_sizes) > 1     
+        fit_auto = 1;
+    else
+        fit_auto = 0; 
+    end 
+   
     % -------------------- SET PROPERTIES ---------------------------------
     
-    % model params
-    net.num_cells = init_params.num_cells;
-    net.noise_dist = noise_distribution;
-    net.spk_NL = spk_nonlinearity;
-    net.lambda_stim = 0;
-    net.offsets = zeros(init_params.num_cells, 1);
-    net.lambda_off = 0;
+    net.integration_layer = int_layer;
     % fit_params
     net.fit_params.fit_auto = fit_auto;
     net.fit_params.fit_stim_individual = fit_stim_individual;
     net.fit_params.fit_stim_shared = fit_stim_shared;
-    net.fit_params.fit_overall_offsets = fit_overall_offsets;
-    net.fit_params.deriv_check = 0;
+    net.fit_params.noise_dist = noise_distribution;
     % optim_params defaults
-    net.optim_params = RLVM.set_init_optim_params(); 
+    net.optim_params = RLVM.set_init_optim_params();
+    net.optim_params.deriv_check = 0;
     % fit_history
     net.fit_history = struct([]);    
 
     % -------------------- INITIALIZE SUBUNITS ----------------------------
     
     % autoencoder subunit; initialized w/o regularization
-    if net.fit_params.fit_auto
-        net.auto_subunit = AutoSubunit(net.num_cells, ...
-                                       init_params.num_hid_nodes, ...
-                                       auto_init_filt, ... 
-                                       act_func_hid, ...
-                                       weight_tie);
+    % initialize empty array of Layer objects
+    layers_(length(layer_sizes)-1,1) = Layer();
+    num_ext_inputs = zeros(length(layer_sizes)-1,1);
+    if ~isempty(int_layer)
+        num_ext_inputs(int_layer) = num_stim_subs;
+    end
+    for n = 1:length(layer_sizes)-1
+        if n == 1 && layer_sizes(n) == 0 
+            assert(num_stim_subs > 0, ...
+                'Must have a stimulus model if not using autoencoder')
+        end
+        layers_(n) = Layer(layer_sizes(n), layer_sizes(n+1), ...
+                            auto_init_filt{n}, ... 
+                            'act_func', act_funcs{n}, ...
+                            'num_ext_inputs', num_ext_inputs(n));
         % inherit values
-        net.auto_subunit.allowed_auto_regtypes = net.allowed_auto_regtypes;
-        net.auto_subunit.allowed_auto_NLtypes = net.allowed_auto_NLtypes;
-        net.auto_subunit.min_pred_rate = net.min_pred_rate;
-        net.auto_subunit.max_g = net.max_g;       
+        layers_(n).allowed_auto_regtypes = net.allowed_auto_regtypes;
+        layers_(n).allowed_auto_NLtypes = net.allowed_auto_NLtypes;
+        layers_(n).min_pred_rate = net.min_pred_rate;
+        layers_(n).max_g = net.max_g;       
+    end
+    net.layers = layers_;
+    if strcmp(net.layers(end).act_func, 'softplus')
+        net.layers(end).biases = -1.5*(1+net.layers(end).biases);
     end
     
     % stimulus subunits; initialize w/o regularization, loop through
     if net.fit_params.fit_stim_individual || net.fit_params.fit_stim_shared
         % initialize empty array of StimSubunit objects
-        stim_subunits_(num_subunits,1) = StimSubunit();
-        for n = 1:num_subunits
+        stim_subunits_(num_stim_subs,1) = StimSubunit();
+        for n = 1:num_stim_subs
             stim_subunits_(n) = StimSubunit( ...
-                                    init_params.stim_params(x_targets(n)), ...
-                                    stim_init_filts{n}, ...
+                                    stim_params(x_targets(n)), ...
+                                    stim_init_weights{n}, ...
                                     mod_signs(n), ...
                                     NL_types{n}, ...
                                     x_targets(n));
@@ -372,8 +343,9 @@ methods
             stim_subunits_(n).min_pred_rate = net.min_pred_rate;
             stim_subunits_(n).max_g = net.max_g;
         end
-        net.stim_subunits = stim_subunits_;        
+        net.stim_subunits = stim_subunits_;
     end
+    
     
     end % method
 
@@ -381,71 +353,6 @@ end
 
 %% ********************* setting methods **********************************
 methods
-    
-    function net = set_params(net, varargin)
-    % net = net.set_params(kargs)
-    %
-    % Takes a sequence of key-value pairs to set network parameters for an 
-    % RLVM object
-    %
-    % INPUTS:
-    %   optional key-value pairs:
-    %	'noise_dist', string
-    %       'gauss' | 'poiss'
-    %       specifies noise distribution used during learning of parameters
-    %   'spk_NL', string
-    %       ['lin'] | 'relu' | 'sigmoid' | 'softplus'
-    %       specifies the spiking nonlinearity
-    %   'num_cells', scalar
-    %       number of cells
-    % 
-    % OUTPUTS:
-    %   net: updated RLVM object
-
-    % check for appropriate number of inputs
-    assert(mod(length(varargin), 2) == 0, ...
-        'Input should be a list of key-value pairs')
-
-    i = 1;
-    while i <= length(varargin)
-        switch lower(varargin{i})
-            case 'noise_dist'
-                assert(ismember(varargin{i+1}, net.allowed_noise_dists), ...
-                    'Invalid noise distribution')
-                net.noise_dist = varargin{i+1};
-            case 'spk_nl'
-                assert(ismember(varargin{i+1}, net.allowed_spk_NLs), ...
-                    'Invalid spiking nonlineariy')
-                net.spk_NL = varargin{i+1};
-            case 'num_cells'
-                assert(varargin{i+1} > 0, ...
-                    'must provide positive number of cells')
-                if varargin{i+1} ~= net.num_cells
-                    warning('changing number of cells; randomly reinitializing weights!')
-                    % update properties
-                    net.num_cells = varargin{i+1};
-                    net.auto_subunit.num_cells = varargin{i+1};
-                    % update auto weights
-                    if ~isempty(net.auto_subunit)
-                        net.auto_subunit = ...
-                            net.auto_subunit.set_init_weights('uniform');
-                    end
-                    % update stim weights
-                    if ~isempty(net.stim_subunits)
-                        for j = 1:length(net.stim_subunits)
-                            net.stim_subunits(j) = ...
-                                net.stim_subunits(j).set_init_filt('gaussian');
-                        end
-                    end
-                end
-            otherwise
-                error('Invalid input flag')
-        end
-        i = i + 2;
-    end
-    
-    end % method
-    
     
     function net = set_fit_params(net, varargin)
     % net = net.set_fit_params(kargs)
@@ -463,10 +370,9 @@ methods
     %       'fit_stim_shared', boolean
     %           specified whether shared stimulus subunits will be fit or
     %           not
-    %       'fit_overall_offsets', boolean
-    %           specifies whether overall offsets will be fit or not
-    %       'deriv_check', boolean
-    %           specifies numerical derivative checking
+    %       'noise_dist', string
+    %           ['gauss'] | 'poiss' | 'bern'
+    %           specifies noise distribution for cost function
     %   
     % OUTPUTS:
     %   net: updated RLVM object
@@ -481,11 +387,11 @@ methods
         switch lower(varargin{i})
             case 'fit_auto'
                 assert(ismember(varargin{i+1}, [0, 1]), ...
-                    '''fit_auto'' option must be set to 0 or 1')
+                    'fit_auto option must be set to 0 or 1')
                 net.fit_params.fit_auto = varargin{i+1};
             case 'fit_stim_individual'
                 assert(ismember(varargin{i+1}, [0, 1]), ...
-                    '''fit_stim_individual'' option must be set to 0 or 1')
+                    'fit_stim_individual option must be set to 0 or 1')
                 assert(~(varargin{i+1} == 1 ...
                     && net.fit_params.fit_stim_shared == 1), ...
                     'RLVM:invalidoption', ...
@@ -493,20 +399,16 @@ methods
                 net.fit_params.fit_stim_individual = varargin{i+1};
             case 'fit_stim_shared'
                 assert(ismember(varargin{i+1}, [0, 1]), ...
-                    '''fit_stim_shared'' option must be set to 0 or 1')
+                    'fit_stim_shared option must be set to 0 or 1')
                 assert(~(varargin{i+1} == 1 ...
                     && net.fit_params.fit_stim_individual == 1), ...
                     'RLVM:invalidoption', ...
                     'cannot fit both individual and shared subunits')
                 net.fit_params.fit_stim_shared = varargin{i+1};
-            case 'fit_overall_offsets'
-                assert(ismember(varargin{i+1}, [0, 1]), ...
-                    '''fit_overall_offsets'' option must be set to 0 or 1')
-                net.fit_params.fit_overall_offsets = varargin{i+1};
-            case 'deriv_check'
-                assert(ismember(varargin{i+1}, [0, 1]), ...
-                    '''deriv_check'' option must be set to 0 or 1')
-                net.fit_params.deriv_check = varargin{i+1};
+            case 'noise_dist'
+                assert(ismember(varargin{i+1}, net.allowed_noise_dists),...
+                    'Invalid noise distribution')
+                net.fit_params.noise_dist = varargin{i+1};
             otherwise
                 error('Invalid input flag');
         end
@@ -524,10 +426,9 @@ methods
     %
     % INPUTS:
     %   optional key-value pairs:
-    %       'optimizer', string
-    %           'minFunc' | 'fminunc' | 'minConf'       
+    %       'optimizer', string     
     %           specify the optimization routine used for learning the
-    %           weights and biases.
+    %           weights and biases; see allowed_optimizers for options
     %       'batch_size', scalar
     %           number of examples to use for each gradient descent step if
     %           using sgd
@@ -543,9 +444,11 @@ methods
     %           'off' to suppress saving output, 'iter' to save output 
     %           at each iteration, 'batch' to save output after each pass 
     %           through data (in sgd), 'both' to save both
+    %       'deriv_check', boolean
+    %           specifies numerical derivative checking
     %
     % OUTPUTS:
-    %   net: updated Autoencoder object
+    %   net: updated RLVM object
     
     % check for appropriate number of inputs
     assert(mod(length(varargin), 2) == 0, ...
@@ -565,7 +468,7 @@ methods
                 net.optim_params.batch_size = varargin{i+1};
             case 'display'
                 assert(ismember(varargin{i+1}, {'off', 'iter', 'batch'}), ...
-                    'invalid parameter for ''display''')
+                    'invalid parameter for display')
                 net.optim_params.Display = varargin{i+1};
             case 'max_iter'
                 assert(varargin{i+1} > 0, ...
@@ -575,8 +478,12 @@ methods
                 net.optim_params.maxFunEvals = 2*varargin{i+1};
             case 'monitor'
                 assert(ismember(varargin{i+1}, {'off', 'iter', 'batch', 'both'}), ...
-                    'invalid parameter for ''monitor''')
+                    'invalid parameter for monitor')
                 net.optim_params.monitor = varargin{i+1};
+            case 'deriv_check'
+                assert(ismember(varargin{i+1}, [0, 1]), ...
+                    'deriv_check option must be set to 0 or 1')
+                net.optim_params.deriv_check = varargin{i+1};
             otherwise
                 error('Invalid input flag');
         end
@@ -588,66 +495,81 @@ methods
     
     function net = set_reg_params(net, reg_target, varargin)
     % net = net.set_reg_params(reg_target, kargs)
+    % example: net = net.set_reg_params('layer', 'l2_weights', 10)
     %
     % Takes a sequence of key-value pairs to set regularization parameters
     % for either the stimulus model or the autoencoder model in an RLVM
-    % object. Note that both the StimSubunit class and the AutoSubunit 
+    % object. Note that both the StimSubunit class and the Layer 
     % class have an equivalent method; the main usefulness of this method 
     % is to quickly update the reg_params structure for ALL stimulus 
-    % subunits.
+    % subunits and layers
     %
     % INPUTS:
-    %   reg_target:     'auto' | 'stim' | 'off' | 'stim_weights'
+    %   reg_target:     'layer' | 'stim'
     %                   string specifying which model components to apply 
     %                   the specified reg params to
     %
     %   optional key-value pairs:
     %       'subs', vector
-    %           specify set of subunits to apply the new reg_params
-    %           to if applying reg_params to stim model (default = ALL)
+    %           specify set of subunits/layers to apply the new reg_params
+    %           to (default: all subunits/layers)
+    %       'layers', vector
+    %           specify set of subunits/layers to apply the new reg_params
+    %           to (default: all subunits/layers)
     %       'lambda_type', scalar
     %           'auto' lambda_types:
-    %           'l2_weights' | 'l2_weights1' | 'l2_weights2' | 'l2_biases'
-    %           | 'l2_biases1' | 'l2_biases2' | 'l1_hid' | 'd2t_hid'
+    %           'l2_weights' | 'l2_biases' | 'd2t_hid'
     %           
     %           'stim' lambda_types:
     %           'l2' | 'd2t' | 'd2x' | 'd2xt'
     %
-    %           'stim_weights' lambda_types:
-    %           'l2'
-    %
-    %           'off' lambda_types:
-    %           'l2'
-    %
     %           first input is a string specifying the type of 
     %           regularization, followed by a scalar giving the associated 
-    %           regularization value, which will be applied to the 
-    %           autoencoder subunit or all stimulus subunits specified by 
-    %           'subs'. If different lambda values are desired for
-    %           different subunits, for now this method will have to be
-    %           called for each subunit update
-    %           Example: net = net.set_reg_params('auto', 'l2_weights', 10)
+    %           regularization value, which will be applied to the layers
+    %           or stimulus subunits specified by 'subs'. If different 
+    %           lambda values are desired for different layers/subunits, 
+    %           for now this method will have to be called for each update
     %   
     % OUTPUTS:
     %   net: updated RLVM object
     
     % check for appropriate number of inputs
-    assert(ismember(reg_target, {'stim', 'auto', 'off', 'stim_weights'}), ...
+    assert(ismember(reg_target, {'stim', 'layer'}), ...
         'Must specify which subunit to update')
     assert(mod(length(varargin), 2) == 0, ...
         'Input should be a list of key-value pairs')
     
     % parse inputs
     switch reg_target
-        case 'auto'
-            % update reg_params for auto subunit
-            net.auto_subunit = net.auto_subunit.set_reg_params(varargin{:});
+        case 'layer'
+            % look for layers; if none specified, the reg_params will be 
+            % applied to ALL layers
+            layers_loc = find(strcmp(varargin, 'layers'));
+            if ~isempty(layers_loc)
+                assert(all(ismember(varargin{layers_loc+1}, ...
+                                    1:length(net.layers))), ...
+                    'invalid target layers specified')
+                layers_inds = varargin{layers_loc+1};
+                % remove sub_inds from varargin; will be passed to another 
+                % method
+                varargin(layers_loc) = [];
+                varargin(layers_loc) = []; % equiv to layers_loc+1 after delete 
+            else
+                % default is to update all subunits
+                layers_inds = 1:length(net.layers); 
+            end               
+            % update reg_params for all desired stim subunits
+            for i = 1:length(layers_inds)
+                net.layers(layers_inds(i)) = ...
+                    net.layers(layers_inds(i)).set_reg_params(varargin{:}); 
+            end
         case 'stim'
-            % look for sub_inds; if none specified, the reg_params will be 
+            % look for subs; if none specified, the reg_params will be 
             % applied to ALL subunits
             subs_loc = find(strcmp(varargin, 'subs'));
             if ~isempty(subs_loc)
-                assert(all(ismember(varargin{subs_loc+1}, 1:length(net.stim_subunits))), ...
+                assert(all(ismember(varargin{subs_loc+1}, ...
+                                    1:length(net.stim_subunits))), ...
                     'invalid target subunits specified')
                 sub_inds = varargin{subs_loc+1};
                 % remove sub_inds from varargin; will be passed to another 
@@ -663,34 +585,8 @@ methods
                 net.stim_subunits(sub_inds(i)) = ...
                     net.stim_subunits(sub_inds(i)).set_reg_params(varargin{:}); 
             end
-        case 'stim_weights'
-            i = 1;
-            while i <= length(varargin)
-                switch lower(varargin{i})
-                    case 'l2'
-                        assert(varargin{i+1} >= 0, ...
-                            'reg value must be nonnegative')
-                        net.lambda_stim = varargin{i+1};
-                    otherwise
-                        error('Invalid input flag');
-                end
-                i = i + 2;
-            end
-        case 'off'
-            i = 1;
-            while i <= length(varargin)
-                switch lower(varargin{i})
-                    case 'l2'
-                        assert(varargin{i+1} >= 0, ...
-                            'reg value must be nonnegative')
-                        net.lambda_off = varargin{i+1};
-                    otherwise
-                        error('Invalid input flag');
-                end
-                i = i + 2;
-            end
         otherwise
-            error('Invalid reg_target; must be auto, stim, off or stim_weights')
+            error('Invalid reg_target; must be auto or stim')
     end
     
     end % method
@@ -700,123 +596,464 @@ end
 %% ********************* getting methods **********************************
 methods
 
-    function [r2, cost_func, mod_internals, mod_reg_pen] = ...
-        get_model_eval(net, pop_activity, varargin)
-    % [r2, cost_func, mod_internals, mod_reg_pen] = ...
-    %		net.get_model_eval(pop_activity, <Xstims>, kargs)
+    function [a, z, gint, fgint] = get_mod_internals(net, varargin)
+    % [a, z, gint, fgint] = net.get_mod_internals(varargin);
     %
-    % Evaluates current RLVM object and returns relevant model data
-    % like goodness-of-fit (r2 or pseudo-r2), value of the cost function,
-    % regularization information, etc.
+    % Evaluates current RLVM object and returns activation values for
+    % different layers of the model
     %
     % INPUTS:
-    %   pop_activity:       T x num_cells matrix of responses
-    %   Xstims:             optional; cell array of stimuli, each of which 
-    %                       is T x _
+    %   optional key-value pairs:
+    %       'pop_activity'  
+    %           num_cells x T matrix of neural activity
+    %       'Xstims', cell array
+    %           cell array of stimuli, each of which is T x filt_len
+    %       'inputs'  
+    %           num_inputs x T matrix of external input activity
+    %       'indx_tr', vector
+    %           subset of 1:T that specifies portion of data used for 
+    %           evaluation (default is all data)
+    %
+    % OUTPUTS:
+    %   z           num_layers x 1 cell array, each cell containing a
+    %               matrix of the signal before being passed through
+    %               the activation function of the layer
+    %   a           same as z, except value of signal after being
+    %               passed through the activation function
+    %   gint        T x num_subunits matrix of subunit filter outputs
+    %   fgint       same as gint, except value of filtered output after
+    %               being passed through the subunit's nonlinearity
+
+    % define defaults
+    pop_activity = [];
+    Xstims = [];
+    inputs = [];
+    indx_tr = NaN; % NaN means we use all available data
+    T = 0;
+    
+    % parse inputs
+    i = 1;
+    while i <= length(varargin)
+        switch lower(varargin{i})
+            case 'pop_activity'
+                % error checking later
+                pop_activity = varargin{i+1};
+                if ~isempty(pop_activity)
+                    T = size(pop_activity, 2);
+                end
+            case 'xstims'
+                % error checking later
+                Xstims = varargin{i+1};
+                if ~isempty(Xstims)
+                    T = size(Xstims{1}, 1);
+                end
+            case 'inputs'
+                % error checking later
+                inputs = varargin{i+1};
+                if ~isempty(inputs)
+                    T = size(inputs, 2);
+                end
+            case 'indx_tr'
+                assert(all(ismember(varargin{i+1}, 1:T)) ...
+                    || isnan(varargin{i+1}), ...
+                    'Invalid fitting indices')
+                indx_tr = varargin{i+1};
+            otherwise
+                error('Invalid input flag');
+        end
+        i = i + 2;
+    end
+   
+    % make sure the proper data is present
+    if ~isempty(net.layers(1).weights) && (isempty(pop_activity) && isempty(inputs))
+        error('must specify pop_activity to fit model')
+    end
+    if ~isempty(net.stim_subunits) && isempty(Xstims)
+        error('must specify Xstims to fit model')
+    end
+    % TODO error-checkin on input
+    
+    % use indx_tr
+    if ~isnan(indx_tr)
+        if ~isempty(pop_activity)
+            pop_activity = pop_activity(:,indx_tr);
+        end
+        if ~isempty(Xstims)
+            for i = 1:length(Xstims)
+                Xstims{i} = Xstims{i}(indx_tr,:);
+            end
+        end
+        if ~isempty(inputs)
+            inputs = inputs(:, indx_tr);
+        end
+        T = length(indx_tr);
+    else
+        if ~isempty(pop_activity)
+            T = size(pop_activity, 2);
+        elseif ~isempty(Xstims)
+            T = size(Xstims{1}, 1);
+        end
+    end
+    
+    % do we fit input model or auto model?
+    if ~isempty(inputs)
+        fit_auto = 0;
+    else
+        fit_auto = 1;
+    end
+        
+    % get internal generating signals - stim
+    if ~isempty(net.stim_subunits)
+        num_subunits = length(net.stim_subunits);
+        if net.fit_params.fit_stim_shared
+            gint = zeros(T, num_subunits);
+            fgint = zeros(T, num_subunits);
+            for i = 1:num_subunits
+                [fgint(:,i), gint(:,i)] = ...
+                    net.stim_subunits(i).get_model_internals(Xstims);
+            end
+        elseif net.fit_params.fit_stim_individual
+            gint = cell(num_subunits, 1);
+            fgint = cell(num_subunits, 1);
+            for i = 1:num_subunits
+                [fgint{i}, gint{i}] = ...
+                    net.stim_subunits(i).get_model_internals(Xstims);
+            end
+        end
+    else
+        gint = [];
+        fgint = [];
+    end
+    
+    % get internal generating signals - auto
+    z = cell(length(net.layers),1);
+    a = cell(length(net.layers),1);
+    for i = 1:length(net.layers)
+        if i == 1
+            if ~isempty(net.layers(1).weights)
+                if fit_auto
+                    % auto model
+                    z{i} = bsxfun(@plus, net.layers(i).weights*pop_activity, ...
+                                     net.layers(i).biases);
+                else
+                    % nn model
+                    z{i} = bsxfun(@plus, net.layers(i).weights*inputs, ...
+                                     net.layers(i).biases);
+                end
+            else
+                % just stimulus model
+                z{i} = repmat(net.layers(i).biases, 1, T);
+            end
+        else
+            z{i} = bsxfun(@plus, net.layers(i).weights*a{i-1}, ...
+                                 net.layers(i).biases);
+        end
+        if i == net.integration_layer
+            z{i} = z{i} + net.layers(i).ext_weights * fgint';
+        end
+        if i == length(net.layers) && net.fit_params.fit_stim_individual
+            for j = 1:num_subunits
+                z{i} = z{i} + net.stim_subunits(j).mod_sign * fgint{j}';
+            end
+        end
+        a{i} = net.layers(i).apply_act_func(z{i});
+    end
+    
+    end % method
+    
+    
+    function [r2, LL_struct] = get_r2(net, pop_activity, pred_activity)
+    % r2 = net.get_r2(pop_activity, pred_activity);
+    %
+    % Evaluates current RLVM object using (pseudo) R2
+    %
+    % INPUTS:
+    %   pop_activity    num_cells x T matrix of neural activity
+    %   pred_activity   num_cells x T matrix of predicted neural activity
     %
     %   optional key-value pairs:
+    %       'Xstims', cell array
+    %           cell array of stimuli, each of which is T x filt_len
+    %       'indx_tr', vector
+    %           subset of 1:T that specifies portion of data used for 
+    %           evaluation (default is all data)
+    %
+    % OUTPUTS:
+    %   r2              num_cells x 1 vector of r2s
+    %   LL_struct       contains LL, LLnull and LLsat
+    
+    T = size(pop_activity,2);
+    mean_activity = mean(pop_activity,2) * ones(1,T);
+    
+    switch net.fit_params.noise_dist
+        case 'gauss'
+            LL = sum((pred_activity - pop_activity).^2, 2);
+            LLnull = sum((pop_activity - mean_activity).^2, 2);
+            LLsat = zeros(size(pop_activity,1),1);
+        case 'poiss'
+            LL = -sum(pop_activity.*log(pred_activity) - pred_activity, 2);
+            LLnull = -sum(pop_activity.*log(mean_activity) - mean_activity, 2);
+            LLsat = pop_activity.*log(pop_activity);
+            LLsat(pop_activity==0) = 0;
+            LLsat = -sum(LLsat - pop_activity, 2);
+        case 'bern'
+            LL1 = pop_activity.*log(pred_activity);
+            LL1(pred_activity==0) = 0;
+            LL2 = (1-pop_activity).*log(1-pred_activity);
+            LL2(pred_activity==1) = 0;
+            LL = -sum(LL1 + LL2, 2);
+            LLnull = -sum(pop_activity.*log(mean_activity) + ...
+                      (1-pop_activity).*log(1-mean_activity), 2);
+            LLsat = zeros(size(pop_activity,1),1);
+        otherwise
+            error('Invalid noise distribution')
+    end
+    
+    r2 = 1 - (LLsat-LL)./(LLsat-LLnull);
+
+    if nargout > 1
+        LL_struct.LL = LL;
+        LL_struct.LLnull = LLnull;
+        LL_struct.LLsat = LLsat;
+    end
+    
+    end % method
+    
+    
+    function [r2, LL_struct] = get_sloo_r2(net, pop_activity, varargin)
+    % r2 = net.get_sloo_r2(pop_activity, kargs)
+    %
+    % Evaluates r2 using a simple leave-one-out procedure; for each cell,
+    % the first layer weight of the autoencoder portion of the network is
+    % set to zero, and the resulting predicted activity for that cell is
+    % compared to the true activity.
+    %
+    % INPUTS:
+    %   'pop_activity'  num_cells x T matrix of neural activity
+    %
+    %   optional key-value pairs:
+    %       'Xstims', cell array
+    %           cell array of stimuli, each of which is T x filt_len
+    %       'inputs', matrix
+    %           num_inputs x T matrix of non-stim inputs
     %       'indx_tr', vector
     %           subset of 1:T that specifies portion of data used for 
     %           evaluation (default is all data)
     %
     % OUTPUTS:
     %   r2:             num_cells x 1 vector of rsquared values 
-    %   cost_fun:       scalar value of unregularized cost function
-    %   auto_internals: struct with fields
-    %       auto_gint   2x1 cell array, each cell containing a T x num_cells
-    %                   matrix of the signal before being passed through
-    %                   the activation function of hidden (1) and output
-    %                   (2) layers
-    %       auto_fgint  same as gint, except value of signal after being
-    %                   passed through the activation function
-    %       stim_gint   num_subunitsx1 cell array, each cell containing a
-    %                   T x num_cells matrix of the filter outputs
-    %       stim_fgint  num_subunitsx1 cell array, each cell containing a
-    %                   T x num_cells matrix of the subunit outputs
-    %   mod_reg_pen:        
-    %       auto_reg_pen struct containing penalties due to different regs
-    %       stim_reg_pen struct containing penalties due to different regs
-
-    % check inputs
-    % net = net.check_inputs(pop_activity,Xstims);
+    %   LL_struct       contains LL, LLnull and LLsat
+    
+    assert(~isempty(net.layers(1).weights), ...
+        'Cannot calculate r2s using sloo method without an autoencoder')
+    assert(size(net.layers(1).weights, 2) == size(net.layers(end).weights, 1), ...
+        'Cannot calculate r2s using sloo method without an autoencoder')
 
     % define defaults
     Xstims = [];
+    inputs = [];
     indx_tr = NaN; % NaN means we use all available data
     
     % parse inputs
     i = 1;
     while i <= length(varargin)
-        if ~ischar(varargin{i})
-            % must be Xstims
-            Xstims = varargin{i};
-            i = i + 1;
-        else
-            switch lower(varargin{i})
-                case 'indx_tr'
-                    assert(all(ismember(varargin{i+1}, 1:size(pop_activity, 1))) ...
+        switch lower(varargin{i})
+            case 'xstims'
+                if ~isempty(Xstims)
+                    assert(iscell(varargin{i+1}), ...
+                        'Xstims must be a cell array')
+                end
+                Xstims = varargin{i+1};
+            case 'inputs'
+                if ~isempty(inputs)
+                    assert(size(varargin{i+1}, 2) == size(pop_activity, 2), ...
+                        'Input matrix size inconsistent with population activity')
+                end
+                inputs = varargin{i+1};
+            case 'indx_tr'
+                assert(all(ismember(varargin{i+1}, 1:size(pop_activity, 2))) ...
                     || isnan(varargin{i+1}), ...
                     'Invalid fitting indices')
-                    indx_tr = varargin{i+1};
-                otherwise
-                    error('Invalid input flag');
-            end
-            i = i + 2;
+                indx_tr = varargin{i+1};
+            otherwise
+                error('Invalid input flag');
         end
+        i = i + 2;
     end
-
+   
     % use indx_tr
     if ~isnan(indx_tr)
-        pop_activity = pop_activity(indx_tr,:);
+        pop_activity = pop_activity(:,indx_tr);
         for i = 1:length(Xstims)
             Xstims{i} = Xstims{i}(indx_tr,:);
         end
+        if ~isempty(inputs)
+            inputs = inputs(:, indx_tr);
+        end
     end
     
-    T = size(pop_activity, 1);
-    G = 0;
+    num_cells = size(net.layers(1).weights, 2);
+    r2 = zeros(num_cells, 1);
+    LL_struct.LL = zeros(num_cells, 1);
+    LL_struct.LLnull = zeros(num_cells, 1);
+    LL_struct.LLsat = zeros(num_cells, 1);
     
-    % get internal generating signals - auto
-    if ~isempty(net.auto_subunit)
-        [auto_fgint, auto_gint] = ...
-            net.auto_subunit.get_model_internals(pop_activity);
-        G = G + auto_gint{2};      
-    else
-        auto_gint = [];
-        auto_fgint = [];
-    end
-    % get internal generating signals - stim
-    if ~isempty(net.stim_subunits)
-        num_subunits = length(net.stim_subunits);
-        if net.stim_subunits(1).stim_params.num_outputs == 1
-            stim_gint = zeros(T, num_subunits);
-            stim_fgint = zeros(T, num_subunits);
-            for i = 1:num_subunits
-                [stim_fgint(:,i), stim_gint(:,i)] = ...
-                    net.stim_subunits(i).get_model_internals(Xstims);
-            end
-            G = G + stim_fgint * net.stim_weights;
-        elseif net.stim_subunits(1).stim_params.num_outputs == net.num_cells
-            stim_gint = cell(num_subunits,1);
-            stim_fgint = cell(num_subunits,1);
-            for i = 1:num_subunits
-                [stim_fgint{i}, stim_gint{i}] = ...
-                    net.stim_subunits(i).get_model_internals(Xstims);
-                G = G + stim_fgint{i} * net.stim_subunits(i).mod_sign;
-            end
-        end 
-    else
-        stim_gint = [];
-        stim_fgint = [];
-    end
-    G = bsxfun(@plus, G, net.offsets');
-    pred_activity = net.apply_spk_NL(G);
+    for c = 1:num_cells
+        
+        temp_net = net;
+        temp_net.layers(1).weights(:,c) = 0;
     
-    % get regularization penalites - auto
-    if ~isempty(net.auto_subunit)
-        auto_reg_pen = net.auto_subunit.get_reg_pen(pop_activity);
-    else
-        auto_reg_pen = [];
+        % get activation values for all model components
+        a = temp_net.get_mod_internals( ...
+                        'pop_activity', pop_activity, ...
+                        'inputs', inputs, ...
+                        'Xstims', Xstims);
+
+        % evaluate pseudo-r^2
+        [temp_r2, temp_LL_struct] = temp_net.get_r2(pop_activity, a{end});
+        r2(c) = temp_r2(c);
+        LL_struct.LL(c) = temp_LL_struct.LL(c);
+        LL_struct.LLnull(c) = temp_LL_struct.LLnull(c);
+        LL_struct.LLsat(c) = temp_LL_struct.LLsat(c);
+        
+    end
+    
+    end % method
+    
+    
+    function [r2, cost_func, mod_internals, mod_reg_pen, LL_struct] = ...
+                get_model_eval(net, pop_activity, varargin)
+    % [r2, cost_func, mod_internals, mod_reg_pen] = ...
+    %                           net.get_model_eval(pop_activity, kargs)
+    %
+    % Evaluates current RLVM object and returns relevant model data
+    % like goodness-of-fit (r2 or pseudo-r2), value of the cost function,
+    % regularization information, etc.
+    %
+    % INPUTS:
+    %   'pop_activity'  num_cells x T matrix of neural activity
+    %
+    %   optional key-value pairs:
+    %       'Xstims', cell array
+    %           cell array of stimuli, each of which is T x filt_len
+    %       'inputs', matrix
+    %           num_inputs x T matrix of non-stim inputs
+    %       'indx_tr', vector
+    %           subset of 1:T that specifies portion of data used for 
+    %           evaluation (default is all data)
+    %       'r2_type', string
+    %           ['full'] | 'sloo'
+    %           'full' computes r2 by filtering data through the network
+    %           and comparing predicted values with true values. 'sloo', or
+    %           'simple leave-one-out', computes r2 for each cell
+    %           individually by zeroing out its input value and comparing
+    %           the resulting predicted values with true values.
+    %
+    % OUTPUTS:
+    %   r2:             num_cells x 1 vector of rsquared values 
+    %   cost_fun:       scalar value of unregularized cost function
+    %   mod_internals:  struct with fields
+    %       z           num_layers x 1 cell array, each cell containing a
+    %                   matrix of the signal before being passed through
+    %                   the activation function of the layer
+    %       a           same as z, except value of signal after being
+    %                   passed through the activation function
+    %       gint        T x num_subunits matrix of subunit filter outputs
+    %       fgint       same as gint, except value of filtered output after
+    %                   being passed through the subunit's nonlinearity
+    %   mod_reg_pen:        
+    %       layer_reg_pen struct containing penalties due to different regs
+    %       stim_reg_pen  struct containing penalties due to different regs
+    %   LL_struct       contains LL, LLnull and LLsat
+
+    % define defaults
+    Xstims = [];
+    inputs = [];
+    indx_tr = NaN; % NaN means we use all available data
+    r2_type = 'full';
+    
+    % parse inputs
+    i = 1;
+    while i <= length(varargin)
+        switch lower(varargin{i})
+            case 'xstims'
+                if ~isempty(Xstims)
+                    assert(iscell(varargin{i+1}), ...
+                        'Xstims must be a cell array')
+                end
+                Xstims = varargin{i+1};
+            case 'inputs'
+                if ~isempty(inputs)
+                    assert(size(varargin{i+1}, 2) == size(pop_activity, 2), ...
+                        'Input matrix size inconsistent with population activity')
+                end
+                inputs = varargin{i+1};
+            case 'indx_tr'
+                assert(all(ismember(varargin{i+1}, 1:size(pop_activity, 2))) ...
+                    || isnan(varargin{i+1}), ...
+                    'Invalid fitting indices')
+                indx_tr = varargin{i+1};
+            case 'r2_type'
+                assert(ismember(varargin{i+1}, {'full', 'sloo'}), ...
+                    'Invalid r2_type');
+                r2_type = varargin{i+1};
+            otherwise
+                error('Invalid input flag');
+        end
+        i = i + 2;
+    end
+   
+    % use indx_tr
+    if ~isnan(indx_tr)
+        pop_activity = pop_activity(:,indx_tr);
+        for i = 1:length(Xstims)
+            Xstims{i} = Xstims{i}(indx_tr,:);
+        end
+        if ~isempty(inputs)
+            inputs = inputs(:, indx_tr);
+        end
+    end
+    
+    % get activation values for all model components
+    [a, z, gint, fgint] = net.get_mod_internals( ...
+        'pop_activity', pop_activity, ...
+        'Xstims', Xstims, ...
+        'inputs', inputs);
+        
+    % evaluate pseudo-r^2
+    switch r2_type
+        case 'full'
+            [r2, LL_struct] = net.get_r2(pop_activity, a{end});
+        case 'sloo'
+            [r2, LL_struct] = net.get_sloo_r2(pop_activity, ...
+                                              'inputs', inputs);
+    end
+    
+    % evaluate cost_func
+    switch net.fit_params.noise_dist
+        case 'gauss'
+            Z = 2 * numel(pop_activity);
+            LL = sum((a{end} - pop_activity).^2, 2);
+        case 'poiss'
+            Z = sum(pop_activity(:));
+            LL = -sum(pop_activity.*log(a{end}) - a{end}, 2);
+        case 'bern'
+            Z = numel(pop_activity);
+            LL1 = pop_activity.*log(a{end});
+            LL1(a{end}==0) = 0;
+            LL2 = (1-pop_activity).*log(1-a{end});
+            LL2(a{end}==1) = 0;
+            LL = -sum(LL1 + LL2, 2);
+        otherwise
+            error('Invalid noise distribution')
+    end
+    cost_func = sum(LL) / Z;
+    
+    % get regularization penalites - layer
+    layer_reg_pen = [];
+    for i = 1:length(net.layers)
+        layer_reg_pen = ...
+            cat(1, layer_reg_pen, net.layers(i).get_reg_pen(pop_activity));
     end
     % get regularization penalties - stim
     stim_reg_pen = [];
@@ -824,69 +1061,54 @@ methods
         stim_reg_pen = ...
             cat(1, stim_reg_pen, net.stim_subunits(i).get_reg_pen());
     end
-    % get regularization penalties - stim weights
-    stim_weights_reg_pen = 0.5 * net.lambda_stim * sum(sum(net.stim_weights.^2));
-    % get regularization penalties - offsets
-    off_reg_pen = 0.5 * net.lambda_off * sum(net.offsets.^2);
-    
-    % evaluate cost_func and pseudo-r^2
-    switch net.noise_dist
-        case 'gauss'
-            Z = 2 * numel(pop_activity);
-            LL = sum((pred_activity - pop_activity).^2, 1)';
-        case 'poiss'
-            Z = sum(sum((pop_activity)));
-            LL = -sum(pop_activity.*log(pred_activity) - pred_activity, 1)';
-        otherwise
-            error('Invalid noise distribution')
-    end
-    LLnull = sum((bsxfun(@minus, pop_activity, mean(pop_activity, 1))).^2, 1)';
-    r2 = 1 - LL./LLnull;
-    cost_func = sum(LL) / Z;
     
     % put internal generating functions in a struct if desired in output
     if nargout > 2
-        mod_internals.auto_gint = auto_gint;
-        mod_internals.auto_fgint = auto_fgint;
-        mod_internals.stim_gint = stim_gint;
-        mod_internals.stim_fgint = stim_fgint;
-        mod_internals.G = G;
+        mod_internals.z = z;
+        mod_internals.a = a;
+        mod_internals.gint = gint;
+        mod_internals.fgint = fgint;
     end
     % put reg penalties in a struct if desired in output
     if nargout > 3
-        mod_reg_pen = struct('auto_reg_pen', auto_reg_pen, ...
-                             'stim_reg_pen', stim_reg_pen, ...
-                             'stim_weights_reg_pen', stim_weights_reg_pen, ...
-                             'off_reg_pen', off_reg_pen);
+        mod_reg_pen = struct('layer_reg_pen', layer_reg_pen, ...
+                             'stim_reg_pen', stim_reg_pen);
     end
 
     end % method
-  
+    
 end
 
 %% ********************* fitting methods **********************************
 methods
     
-    function [net, varargout] = fit_model(net, fit_type, pop_activity, varargin)
-    % net = net.fit_model(fit_type, pop_activity, <Xstims>, kargs)
+    function [net, varargout] = fit_model(net, fit_type, varargin)
+    % net = net.fit_model(fit_type, kargs)
     %
     % Checks inputs and farms out parameter fitting to other methods 
     % depending on what type of model fit is desired
     %
     % INPUTS:
-    %   fit_type:           ['params'] | 'weights' | 'latent_vars' | 'alt'
-    %   pop_activity:       T x num_cells matrix of responses
-    %   Xstims:             optional; cell array of stimuli, each of which 
-    %                       is T x _; required if stim_subunits is not
-    %                       empty
+    %   fit_type:   'weights' | 'inputs' | 
+    %               'mml_weights' | 'mml_latent_vars' | 'mml_alt'
     %
     %   optional key-value pairs:
+    %       'pop_activity', matrix
+    %           num_cells x T matrix of neural activity; required if weight
+    %           matrix in first layer of model is not empty
+    %       'Xstims', cell array
+    %           stimulus covariate matrices; required if stim_subunits is
+    %           not empty
+    %       'inputs', matrix
+    %           num_inputs x T matrix of inputs; required if number of 
+    %           input nodes is different from number of output nodes
     %       'indx_tr', vector
     %           subset of 1:T that specifies portion of data used for 
     %           fitting
-    %       'subs', vector
-    %           vector of indices specifying which subunits of stimulus 
-    %           model should be optimized 
+    %       'pretraining', string
+    %           ['none'] | 'pca' | 'pca-varimax' | 'layerwise'
+    %           specifies how a model with a full autoencoder component is
+    %           initialized
     %       'init_weights', string or vector
     %           ['model'] | 'gauss' | vector
     %           used by fit_weights, fit_latent_vars and fit_alt to 
@@ -912,90 +1134,113 @@ methods
     % OUTPUTS:
     %   net: updated RLVM object
     
-    assert(ismember(fit_type, {'params', 'weights', 'latent_vars', 'alt'}), ...
-        'Unsupported fit_type specified')
+    assert(ismember(fit_type, {'weights', 'mml_weights', ...
+                               'mml_latent_vars', 'mml_alt', 'inputs'}), ...
+        'Invalid fit_type specified')
     
     % DEFINE DEFAULTS
     % put all relevant data into fitting_struct, which acts as a common
     % data structure to all fitting routines
+    pop_activity = [];
     Xstims = [];
+    inputs = [];
     indx_tr = NaN;              % train on all data
-    fit_subs = 1:length(net.stim_subunits);
-    init_weights = 'model';
-    init_latent_vars = 'model';
-    init_type = 'auto';
-    first_fit = 'latent_vars';
+    pretraining = 'none';       % no pretraining of weights
+    init_weights = 'model';     % init mml weights from model
+    init_latent_vars = 'model'; % init mml lvs from model
+    init_method = 'auto';       % init model with autoencoder
+    first_fit = 'latent_vars';  % fit lvs before weights
     
     % PARSE OPTIONAL INPUTS
     i = 1;
     while i <= length(varargin)
-        if ~ischar(varargin{i})
-            % this must be Xstims
-            Xstims = varargin{i};
-            i = i + 1;
-        else
-            switch lower(varargin{i})
-                case 'indx_tr'
-                    assert(all(ismember(varargin{i+1}, 1:size(pop_activity,1))) ...
-                        && ~any(isnan(varargin{i+1})), ...
-                        'Invalid fitting indices')
-                    indx_tr = varargin{i+1};
-                case 'subs'
-                    assert(all(ismember(varargin{i+1}, 1:length(net.stim_subunits))), ...
-                        'invalid target subunits specified');
-                    fit_subs = varargin{i+1};
-                case 'init_weights'
-                    if ischar(varargin{i+1})
-                        assert(ismember(varargin{i+1}, {'model', 'gauss'}), ...
-                            'Unsupported init_weights specified')
-                    elseif isvector(varargin{i+1})
-                        assert(length(varargin{i+1}) == ...
-                            net.num_cells + net.num_cells * net.auto_subunit.num_hid_nodes, ...
-                            'init_weights vector has improper size')
+        switch lower(varargin{i})
+            case 'xstims'
+                % error checking later
+                Xstims = varargin{i+1};
+            case 'pop_activity'
+                % error checking later
+                pop_activity = varargin{i+1};
+            case 'inputs'
+                % error checking later
+                inputs = varargin{i+1};
+            case 'indx_tr'
+                assert(all(ismember(varargin{i+1}, 1:size(pop_activity,2))) ...
+                    && ~any(isnan(varargin{i+1})), ...
+                    'Invalid fitting indices')
+                indx_tr = varargin{i+1};
+            case 'pretraining'
+                assert(ismember(varargin{i+1}, net.allowed_pretraining), ...
+                    'invalid pretraining option')
+                pretraining = varargin{i+1};
+            case 'init_weights'
+                if ischar(varargin{i+1})
+                    assert(ismember(varargin{i+1}, {'model', 'gauss'}), ...
+                        'Unsupported init_weights specified')
+                elseif isvector(varargin{i+1})
+                    assert(length(varargin{i+1}) == ...
+                        net.num_cells + net.num_cells * net.auto_subunit.num_hid_nodes, ...
+                        'init_weights vector has improper size')
+                else
+                    warning('Incorrect init_weights format; defaulting to model')
+                    init_weights = 'model';
+                end
+                init_weights = varargin{i+1};
+            case 'init_latent_vars'
+                if ischar(varargin{i+1})
+                    assert(ismember(varargin{i+1}, {'model', 'gauss'}), ...
+                        'Unsupported init_latent_vars specified')
+                elseif ismatrix(varargin{i+1})
+                    if isnan(indx_tr)
+                        assert(size(varargin{i+1}) == ...
+                            [size(pop_activity, 1), net.auto_subunit.num_hid_nodes], ...
+                            'Incorrect size for latent vars')
                     else
-                        warning('Incorrect init_weights format; defaulting to model')
-                        init_weights = 'model';
+                        assert(size(varargin{i+1}) == ...
+                            [length(indx_tr), net.auto_subunit.num_hid_nodes], ...
+                            'Incorrect size for latent vars')
                     end
-                    init_weights = varargin{i+1};
-                case 'init_latent_vars'
-                    if ischar(varargin{i+1})
-                        assert(ismember(varargin{i+1}, {'model', 'gauss'}), ...
-                            'Unsupported init_latent_vars specified')
-                    elseif ismatrix(varargin{i+1})
-                        if isnan(indx_tr)
-                            assert(size(varargin{i+1}) == ...
-                                [size(pop_activity, 1), net.auto_subunit.num_hid_nodes], ...
-                                'Incorrect size for latent vars')
-                        else
-                            assert(size(varargin{i+1}) == ...
-                                [length(indx_tr), net.auto_subunit.num_hid_nodes], ...
-                                'Incorrect size for latent vars')
-                        end
-                    else
-                        warning('Incorrect init_latent_vars format; defaulting to model')
-                        init_latent_vars = 'model';
-                    end
-                    init_latent_vars = varargin{i+1};
-                case 'init_type'
-                    assert(ismember(varargin{i+1}, {'auto', 'init'}), ...
-                        'Improper init_type specified')
-                    init_type = varargin{i+1};
-                case 'first_fit'
-                    assert(ismember(varargin{i+1}, {'weights', 'latent_vars'}), ...
-                        'Improper fit_first specified')
-                    first_fit = varargin{i+1};
-                otherwise
-                    error('Invalid input flag');
-            end
-            i = i + 2;
+                else
+                    warning('Incorrect init_latent_vars format; defaulting to model')
+                    init_latent_vars = 'model';
+                end
+                init_latent_vars = varargin{i+1};
+            case 'init_method'
+                assert(ismember(varargin{i+1}, {'auto', 'init'}), ...
+                    'Improper init_method specified')
+                init_method = varargin{i+1};
+            case 'first_fit'
+                assert(ismember(varargin{i+1}, {'weights', 'latent_vars'}), ...
+                    'Improper fit_first specified')
+                first_fit = varargin{i+1};
+            otherwise
+                error('Invalid input flag');
         end
+        i = i + 2;
     end
     
+    % make sure the proper data is present
+    if ~isempty(net.layers(1).weights) && isempty(pop_activity)
+        error('must specify pop_activity to fit model')
+    end
+    if ~isempty(net.stim_subunits) && isempty(Xstims)
+        error('must specify Xstims to fit model')
+    end
+    if strcmp(fit_type, 'inputs') && isempty(inputs)
+        error('must specify an input matrix to fit model')
+    end
+    
+    % create fitting struct
     if isnan(indx_tr)
         fit_struct.pop_activity = pop_activity;
         fit_struct.Xstims = Xstims;
+        fit_struct.inputs = inputs;
     else
-        fit_struct.pop_activity = pop_activity(indx_tr,:);
+        if ~isempty(pop_activity)
+            fit_struct.pop_activity = pop_activity(:,indx_tr);
+        else
+            fit_struct.pop_activity = [];
+        end
         if ~isempty(Xstims)
             for i = 1:length(Xstims)
                 fit_struct.Xstims{i} = Xstims{i}(indx_tr,:);
@@ -1003,37 +1248,184 @@ methods
         else
             fit_struct.Xstims = [];
         end
+        if ~isempty(inputs)
+            fit_struct.inputs = inputs(:,indx_tr);
+        else
+            fit_struct.inputs = [];
+        end
     end
     clear pop_activity
     clear Xstims
-    fit_struct.fit_subs = fit_subs;
+    clear inputs
     fit_struct.init_weights = init_weights;
     fit_struct.init_latent_vars = init_latent_vars;
-    fit_struct.init_type = init_type;
+    fit_struct.init_method = init_method;
     fit_struct.first_fit = first_fit;
     
     % check consistency between inputs
     net.check_fit_struct(fit_struct, fit_type); 
     
-    % DETERMINE OPTIMIZATION ROUTINE
-    if strcmp(fit_type, 'params')
+    % pretrain model
+    if ~strcmp(pretraining, 'none')
+        assert(~isempty(net.layers(1).weights), ...
+            'Cannot pretrain a stimulus-only model')
+        if strcmp(fit_type, 'inputs')
+            net = net.pretrain(fit_struct.inputs, pretraining);
+        else
+            net = net.pretrain(fit_struct.pop_activity, pretraining);
+        end
+    end
+    
+    % fit model
+    if strcmp(fit_type, 'weights')
         net = net.fit_weights_latent_vars(fit_struct);
-    elseif strcmp(fit_type, 'weights')
+    elseif strcmp(fit_type, 'inputs')
+        net = net.fit_weights_latent_vars_nn(fit_struct);
+    elseif strcmp(fit_type, 'mml_weights')
         [net, weights, latent_vars] = net.fit_weights(fit_struct);
         varargout{1} = weights;
         varargout{2} = latent_vars;
-    elseif strcmp(fit_type, 'latent_vars')
+    elseif strcmp(fit_type, 'mml_latent_vars')
         [net, weights, latent_vars] = net.fit_latent_vars(fit_struct);
         varargout{1} = weights;
         varargout{2} = latent_vars;
-    elseif strcmp(fit_type, 'alt')
+    elseif strcmp(fit_type, 'mml_alt')
         [net, weights, latent_vars] = net.fit_alt(fit_struct);
         varargout{1} = weights;
         varargout{2} = latent_vars;
     else
-        error('Incorrect fit_type')
+        error('Invalid fit_type')
     end
     
+    end % method
+    
+    
+    function net = pretrain(net, data, pretraining)
+    % net = net.pretrain(data, pretraining)
+	% 
+    % Performs a layer-wise pretraining of the model in order to speed up
+    % convergence during model fitting
+    % For a symmetric network, just train encoding weights and set decoding
+    % weights to be transposes
+    % For a non-symmetric network, train the first half of the layers, set
+    % the decoding weights in the second half to be transposes, and leave
+    % the middle layer to be random weights
+    %
+	% INPUTS:
+    %   data:           num_cells x T matrix of neural activity
+    %   pretraining:    string specifying type of desired pretraining
+    %
+	% OUTPUTS:
+    %   net:            updated RLVM object
+    
+    % get number of units per layer
+    num_layers = length(net.layers);
+    num_nodes = zeros(num_layers+1,1);
+    for i = 1:num_layers
+        num_nodes(i) = size(net.layers(i).weights,2);
+    end
+    num_nodes(num_layers+1) = size(net.layers(num_layers).weights,1);
+    
+    % determine properties of network
+    if all(num_nodes == flipud(num_nodes))
+        net_symmetric = 1;
+    else
+        net_symmetric = 0;
+    end
+    if num_layers > 1
+        if mod(num_layers-1, 2) == 0
+            middle_layer = (num_layers-1)/2 + 1;
+        else
+            middle_layer = ceil((num_layers-1)/2);
+        end
+%         [~, middle_layer] = min(num_nodes(2:end)); % don't include data layer
+    else
+        middle_layer = 0;
+    end
+    
+    % set initial params
+    temp_data = data;
+    
+    for layer = 1:middle_layer
+        
+        % update params
+        num_hid = num_nodes(layer+1);
+        
+        switch pretraining
+            case 'pca'                
+                temp_data = bsxfun(@minus, temp_data, mean(temp_data,2));
+                [temp_weights,~,~] = svd(temp_data,'econ');
+                temp_weights = temp_weights(:,1:num_hid)';
+                temp_data = temp_weights*temp_data;
+            case 'pca-varimax'
+                temp_data = bsxfun(@minus, temp_data, mean(temp_data,2));
+                [temp_weights,~,~] = svd(temp_data,'econ');
+                % only rotate factors if subspace is greater than 1-d
+                if num_hid > 1
+                    try
+                        temp_weights = rotatefactors(temp_weights(:,1:num_hid), ...
+                                        'Method', 'varimax')';
+                    catch ME
+                        % identifier: 'stats:rotatefactors:IterationLimit'
+                        try
+                            temp_weights = rotatefactors(temp_weights(:,1:num_hid), ...
+                                        'Method', 'varimax', ...
+                                        'reltol', 1e-3, ...
+                                        'maxit', 2000)';
+                        catch ME
+                            temp_weights = temp_weights(:,1:num_hid)';
+                        end
+                    end
+                else
+                    temp_weights = temp_weights(:,1)';
+                end
+                temp_weights = bsxfun(@times, temp_weights, sign(mean(temp_weights,2)));
+                temp_data = temp_weights*temp_data;
+            case 'layerwise'
+                
+                error('TODO')
+                
+%                 if ~strcmp(net.optim_params.Display, 'off')
+%                     fprintf('Pretraining layer %g of %g\n', layer, middle_layer)
+%                 end
+                
+                % initialize model
+                init_params = RLVM.set_init_params(temp_data);
+                net0 = RLVM(init_params, ...
+                            'num_hid_nodes', num_hid, ...
+                            'init_weights', 'gauss');
+
+                % specify additional net_params
+                net0 = net0.set_net_params( ...
+                            'act_func_hid', 'relu', ...
+                            'act_func_out', 'lin');
+
+                net0 = net0.set_reg_params( ...
+                            'l2_weights', 1e-5, ...
+                            'l2_biases', 1e-5);
+
+                net0 = net0.set_optim_params( ...
+                            'display', 'off', ...
+                            'deriv_check', 0, ...
+                            'maxIter', 5000);
+
+                % fit
+                net0 = net0.fit_weights(temp_data);
+                
+                temp_weights = net0.weights{1};
+                [~,a] = net0.get_model_internals(temp_data);
+                temp_data = a{1};
+                
+            otherwise
+                error('Invalid pretraining string specified')
+        end   
+        
+        net.layers(layer).weights = temp_weights;
+        if net_symmetric
+            net.layers(end-layer+1).weights = temp_weights';
+        end
+        
+    end
     end % method
     
 end
@@ -1148,136 +1540,12 @@ methods
     end
     
     end % method
-    
-    
-    function [sorted_indxs, sorted_weights, fig_handle] = ...
-                                disp_sorted_weights(net, varargin)
-    % [sorted_weights, sorted_indxs, fig_handle] = 
-    %                           net.disp_sorted_weights(<sorted_order>)
-    %
-    % Plots AutoSubunit sorted coupling matrix.
-    % Combines AutoSubunit.sort_weights and AutoSubunit.disp_weights
-    %
-    % INPUTS:
-    %   sorted_indxs:       optional; sorted indices
-    %
-    % OUTPUTS:
-    %   sorted_weights:     matrix of sorted weights
-    %   sorted_indxs:       vector of sorted indices
-    %   fig_handle:         handle of created figure
-
-    % check inputs
-    if ~isempty(varargin)
-        assert(length(varargin{1}) == net.num_cells, ...
-            'sorted_indxs of wrong size')
-        sorted_indxs = varargin{1};
-        sorted_weights = net.auto_subunit.w2(:, sorted_indxs)';
-    else
-        [sorted_weights, sorted_indxs] = net.auto_subunit.sort_weights();
-    end
-    
-    fig_handle = figure;
-    myimagesc(sorted_weights);
-    xlabel('Latent vars')
-    ylabel('Neuron #')
-    
-    end
-    
+       
 end
 
 %% ********************* hidden methods ***********************************
 methods (Hidden)
-	
-    function sig = apply_spk_NL(net, sig)
-    % sig = net.apply_act_func(sig)
-    %
-    % internal function that applies spiking nonlinearity of model to input
-    %
-    % INPUTS:
-    %   sig:    T x num_cells matrix
-    %
-    % OUTPUTS:
-    %   sig:    input passed through spiking nonlinearity
-
-    switch net.spk_NL
-        case 'lin'
-        case 'relu'
-            sig = max(0, sig);
-        case 'sigmoid'
-            sig = 1 ./ (1 + exp(-sig));
-        case 'softplus'
-            temp_sig = log(1 + exp(sig));
-            % take care of under/overflow
-            % appx linear
-            temp_sig(sig > net.max_g) = sig(sig > net.max_g);
-            % so LL isn't undefined
-            temp_sig(temp_sig < net.min_pred_rate) = net.min_pred_rate;
-            sig = temp_sig;
-    end
-    
-    end % method
-
-    
-    function sig = apply_spk_NL_deriv(net, sig)
-    % sig = net.apply_spk_NL_deriv(sig)
-    %
-    % internal function that calculates the derivative of the spiking 
-    % nonlinearity to a given input
-    %
-    % INPUTS:
-    %     sig:      T x num_cells matrix
-    %
-    % OUTPUTS:
-    %     sig:      input passed through derivative of spiking nonlinearity
-
-    switch net.spk_NL
-        case 'lin'
-            sig = ones(size(sig));
-        case 'relu'
-            sig(sig <= 0) = 0;
-            sig(sig > 0) = 1;
-        case 'sigmoid'
-            sig = exp(-sig) ./ (1 + exp(-sig)).^2;
-        case 'softplus'
-            temp_sig = exp(sig) ./ (1 + exp(sig));
-            temp_sig(sig > net.max_g) = 1; % e^x/(1+e^x) => 1 for large x
-            sig = temp_sig;
-    end
-    
-    end % method
-    
-    
-    function net = check_inputs(net, pop_activity, Xstims)
-    % net = net.check_inputs(pop_activity, Xstims)
-    %
-    % Checks inputs for fitting and eval methods
-    %
-    % INPUTS:
-    %   pop_activity:       T x num_cells matrix of responses
-    %   Xstims:             cell array of stimuli, each of which is Tx_
-    %
-    % OUTPUTS:
-    %   none; throws flag if error
-    %
-    % CALLED BY:
-    %   RLVM.get_model_eval
-    
-    % check pop_activity and Xstims
-    if ~isempty(Xstims)
-        % ensure Xstims is a cell array
-        assert(iscell(Xstims), ...
-            'Xstims must be a cell array')
-        % ensure first dimension is same across all Xstims (if necessary)
-        assert(length(unique(cellfun(@(x) size(x,1), Xstims))) == 1, ...
-            'Xstim elements need to have same size along first dimension');
-        % ensure first dimension is same across pop_activity and Xstims
-        assert(size(pop_activity, 1) == size(Xstims{1}, 1), ...
-            'First (time) dim must be consisent across pop activity and Xstims')
-    end
-    
-    end % method
-    
-    
+  
     function check_fit_struct(net, fit_struct, fit_type)
     % net.check_fit_struct(fit_struct)
     %
@@ -1301,19 +1569,17 @@ methods (Hidden)
         % ensure first dimension is same across all Xstims (if necessary)
         assert(length(unique(cellfun(@(x) size(x,1), fit_struct.Xstims))) == 1, ...
              'Xstim elements need to have same size along first dimension');
-        % ensure first dimension is same across pop_activity and Xstims
-        assert(size(fit_struct.pop_activity, 1) == size(fit_struct.Xstims{1}, 1), ...
-            'First (time) dim must be consisent across pop activity and Xstims')
+        
+        if ~isempty(fit_struct.pop_activity)
+            % ensure first dimension is same across pop_activity and Xstims
+            assert(size(fit_struct.pop_activity, 2) == size(fit_struct.Xstims{1}, 1), ...
+                'time dim must be consisent across pop activity and Xstims')
+        end
     end
     
     if net.fit_params.fit_auto
     end
-    if net.fit_params.fit_stim_individual
-        % ensure Xstims exists
-        assert(~isempty(fit_struct.Xstims), ...
-            'must provide Xstims matrix to fit stim subunit')
-    end
-    if net.fit_params.fit_stim_shared
+    if net.fit_params.fit_stim_individual || net.fit_params.fit_stim_shared
         % ensure Xstims exists
         assert(~isempty(fit_struct.Xstims), ...
             'must provide Xstims matrix to fit stim subunit')
@@ -1330,89 +1596,6 @@ end
 
 %% ********************* static methods ***********************************
 methods (Static)
-    
-    function init_params = create_init_params(stim_params, num_cells, ...
-                                    num_hid_nodes, varargin)
-    % stim_params = RLVM.create_init_params(stim_params, num_cells,
-    %                               <num_hid_nodes>, kargs)
-    %
-    % Creates a struct containing initial parameters to feed into
-    % constructor
-    %
-    % INPUTS:
-    %   stim_params:    struct array 
-    %       dims:       defines dims of the (time-embedded) stimulus, in 
-    %                   the form [num_lags, num_xpix, num_ypix]. If no
-    %                   stimulus model is desired, use [].
-    %   num_cells:      number of cells in the population
-    %   num_hid_nodes:  optional; number of hidden units. If no autoencoder
-    %                   is desired, use 0.
-    %
-    %   optional key-value pairs:
-    %       'num_subs', scalar
-    %           number of subunits for model
-    %
-    % OUTPUTS:
-    %   init_params:    struct of initial parameters
-
-    % check inputs
-    if nargin < 3
-        warning('no hidden nodes specified; defaulting to none')
-        num_hid_nodes = 0;
-    end
-    if nargin < 2
-        error('must input number of cells as second argument')
-    end
-    if nargin < 1
-        error('must input stim_params struct array as first argument')
-    end
-    assert(num_cells > 0, ...
-        'Must fit positive number of cells')
-    assert(num_hid_nodes >= 0, ...
-        'Must specify nonnegative number of hidden nodes')
-    
-    % make sure each dim field has form [num_lags num_xpix num_ypix] and
-    % concatenate with 1's if necessary
-    if ~isempty(stim_params)
-        for n = 1:length(stim_params)
-            while length(stim_params(n).dims) < 3
-                % pad stim_dims with 1's for bookkeeping
-                stim_params(n).dims = cat(2, stim_params(n).dims, 1); 
-            end
-            % used in initializing weights
-            stim_params(n).num_cells = num_cells; 
-        end
-    end
-    
-    % set defaults
-    num_subunits = length(stim_params);
-    
-    % parse inputs
-    i = 1; 
-    while i <= length(varargin)
-        switch lower(varargin{i})
-            case 'num_subs'
-                assert(varargin{i+1} >= 0, ...
-                    'must have nonnegative number of subunits')
-                num_subunits = varargin{i+1};
-            otherwise
-                error('Invalid input flag');
-        end
-        i = i + 2;
-    end
-    
-    % make sure there is at least as many subunits as stimuli
-    assert(num_subunits >= length(stim_params), ...
-        'Not enough subunits')
-    
-    % set fields
-    init_params.stim_params = stim_params;
-    init_params.num_subunits = num_subunits;
-    init_params.num_cells = num_cells;
-    init_params.num_hid_nodes = num_hid_nodes;
-
-    end % method
-
     
     function optim_params = set_init_optim_params()
     % optim_params = RLVM.set_init_optim_params();

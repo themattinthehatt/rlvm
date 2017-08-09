@@ -1,7 +1,7 @@
-function net = fit_weights_latent_vars(net, fs)
-% net = net.weights_latent_vars(fs)
+function net = fit_weights_latent_vars_nn(net, fs)
+% net = net.weights_latent_vars_nn(fs)
 %
-% Simultaneously fits model parameters - both autoencoder weights and 
+% Simultaneously fits model parameters - both neural network weights and 
 % stimulus filters
 %
 % INPUTS:
@@ -217,14 +217,14 @@ net.fit_history = cat(1, net.fit_history, curr_fit_details);
     biases = cell(num_layers,1);
     grad_weights = cell(num_layers,1);
     grad_biases = cell(num_layers,1);
-    if net.fit_params.fit_stim_shared
-        gint = zeros(T,num_subs);   % store filter outputs
-        fgint = gint;               % store subunit outputs
+    if net.fit_params.fit_stim_individual
+        gint = cell(num_subs,1);    % store filter outputs
+        fgint = gint;                   % store subunit outputs
         filts = cell(num_subs,1);   % filters for all (target) subs
-    elseif net.fit_params.fit_stim_individual
-        gint = cell(num_subs,1);   % store filter outputs
-        fgint = gint;               % store subunit outputs
-        filts = cell(num_subs,1);   % filters for all (target) subs        
+    elseif net.fit_params.fit_stim_shared
+        gint = zeros(T,num_subs);   % store filter outputs
+        fgint = gint;                   % store subunit outputs
+        filts = cell(num_subs,1);   % filters for all (target) subs
     end
     % Note: cell arrays do not need to be stored contiguously 
     
@@ -248,11 +248,12 @@ net.fit_history = cat(1, net.fit_history, curr_fit_details);
     
     % ******************* COMPUTE FUNCTION VALUE **************************
     if net.fit_params.fit_stim_individual
-        % loop over the subunits and compute the generating signals
-        for ii = 1:num_subs 
-            gint{ii} = fs.Xstims{x_targets(ii)} * filts{ii};
-            fgint{ii} = net.stim_subunits(ii).apply_NL_func(gint{ii});
-        end
+%         % loop over the subunits and compute the generating signals
+%         for ii = 1:num_subs 
+%             gint{ii} = fs.Xstims{x_targets(ii)} * filts{ii};
+%             fgint{ii} = net.stim_subunits(ii).apply_NL_func(gint{ii});
+%             G = G + fgint{ii} * mod_signs(ii);
+%         end
     elseif net.fit_params.fit_stim_shared
         if use_batch_calc
             gint = fs.Xstims{x_targets(1)} * [filts{:}];
@@ -268,8 +269,8 @@ net.fit_history = cat(1, net.fit_history, curr_fit_details);
     for ii = 1:num_layers
         if ii == 1
             if ~isempty(weights{1})
-                % auto model
-                z{ii} = bsxfun(@plus, weights{ii}*fs.pop_activity, ...
+                % nn model
+                z{ii} = bsxfun(@plus, weights{ii}*fs.inputs, ...
                                       biases{ii});
             else
                 % just stimulus model
@@ -281,11 +282,6 @@ net.fit_history = cat(1, net.fit_history, curr_fit_details);
         end
         if ii == int_layer
             z{ii} = z{ii} + stim_weights * fgint';
-        end
-        if ii == num_layers && net.fit_params.fit_stim_individual
-            for jj = 1:num_subs
-                z{ii} = z{ii} + (mod_signs(jj) * fgint{jj})';
-            end
         end
         a{ii} = net.layers(ii).apply_act_func(z{ii});
     end
@@ -319,9 +315,6 @@ net.fit_history = cat(1, net.fit_history, curr_fit_details);
     % ******************* COMPUTE GRADIENTS *******************************
     % backward pass, last layer
     delta = net.layers(end).apply_act_deriv(z{end}) .* cost_grad;
-    if net.fit_params.fit_stim_individual
-        stim_delta = delta;
-    end
     if num_layers > 1
         % only perform if a{end-1} exists (use fs.pop_activity otherwise)
         grad_weights{end} = delta * a{end-1}';
@@ -332,11 +325,8 @@ net.fit_history = cat(1, net.fit_history, curr_fit_details);
     end
     % backward pass, hidden layers
     for ii = (num_layers-1):-1:2
-        temp1 = net.layers(ii).apply_act_deriv(z{ii});
-        temp2 = (weights{ii+1}' * delta);
-        delta = temp1 .* temp2;
-%         delta = net.layers(ii).apply_act_deriv(z{ii}) .* ...
-%                 (weights{ii+1}' * delta);
+        delta = net.layers(ii).apply_act_deriv(z{ii}) .* ...
+                (weights{ii+1}' * delta);
         grad_weights{ii} = delta * a{ii-1}';
         grad_biases{ii} = sum(delta, 2);
         if ii == int_layer
@@ -351,7 +341,7 @@ net.fit_history = cat(1, net.fit_history, curr_fit_details);
         % else use delta calculated above
     end
     if ~isempty(net.layers(1).weights)
-        grad_weights{1} = delta * fs.pop_activity';
+        grad_weights{1} = delta * fs.inputs';
         grad_biases{1} = sum(delta, 2);
     else
         grad_weights{1} = [];
@@ -368,15 +358,17 @@ net.fit_history = cat(1, net.fit_history, curr_fit_details);
     end
     
     if net.fit_params.fit_stim_individual
-        % initialize LL gradient
-        stim_grad = zeros(num_stim_indxs, 1);
-        for ii = 1:num_subs 
-            delta = stim_delta .* ...
-                    net.stim_subunits(ii).apply_NL_deriv(gint{ii})';
-            temp = (mod_signs(ii) * delta * fs.Xstims{x_targets(ii)})';
-            stim_grad(stim_indxs{ii}) = temp(:);
-        end
-        stim_weights_grad = [];
+%         % initialize LL gradient
+%         stim_grad = zeros(num_stim_indxs, 1);
+%         residual = net.apply_spk_NL_deriv(G).*cost_grad;
+%         for ii = 1:num_subs 
+%             deriv = residual.* ...
+%                     net.stim_subunits(ii).apply_NL_deriv(gint{ii});
+%             stim_grad(stim_indxs{ii}) = reshape( ...
+%                 (fs.Xstims{x_targets(ii)})' * deriv * mod_signs(ii), ...
+%                 [], 1);
+%         end
+%         stim_weights_grad = [];
     elseif net.fit_params.fit_stim_shared
         
         stim_weights_grad = int_delta * fgint;
@@ -455,7 +447,6 @@ net.fit_history = cat(1, net.fit_history, curr_fit_details);
     end % internal function
 
 end % fit_weights method
-
 
 
 

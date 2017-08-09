@@ -24,7 +24,9 @@ switch net.noise_dist
     case 'gauss'
         Z = numel(fs.pop_activity);
     case 'poiss'
-        Z = sum(sum(fs.pop_activity));
+        Z = sum(fs.pop_activity(:));
+    case 'bern'
+        Z = numel(fs.pop_activity);
     otherwise
         error('Invalid noise distribution')
 end
@@ -167,6 +169,19 @@ net.fit_history = cat(1, net.fit_history, curr_fit_details);
             cost_grad = -(fs.pop_activity./pred_activity - 1);
             % set gradient equal to zero where underflow occurs
             cost_grad(pred_activity <= net.min_pred_rate) = 0;
+        case 'bern'
+            % calculate cost function
+            cost_func1 = fs.pop_activity.*log(a{end});
+            cost_func1(a{end}==0) = 0;
+            cost_func2 = (1-fs.pop_activity).*log(1-a{end});
+            cost_func2(a{end}==1) = 1;
+            cost_func = -sum(sum(cost_func1 + cost_func2));
+            % calculate gradient
+            cost_grad = -(fs.pop_activity./a{end} - ...
+                         (1-fs.pop_activity)./(1-a{end}));
+            % set gradient equal to zero where underflow occurs
+            cost_grad(a{end} <= net.min_pred_rate) = 0;
+            cost_grad(a{end} >= 1-net.min_pred_rate) = 0;
     end
     
     % ******************* COMPUTE GRADIENT ********************************

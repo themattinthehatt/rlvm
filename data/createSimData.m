@@ -20,7 +20,7 @@ function data_struct = createSimData(sim_stim, sim_lvs)
 %               data
 
 % overall constants
-num_neurons = 100;
+num_neurons = 50;
 rng_seed = 0;
 rng(rng_seed);
 

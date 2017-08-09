@@ -21,11 +21,11 @@
 
 % create simulated data that contains activity due to both shared inputs
 % (latent variables) and stimulus responses
-% data_struct = createSimData(1, 1);
-% 
+data_struct = createSimData(1, 1);
+
 % % fit normalized 2p data
-% data = data_struct.data_2p;
-% data = bsxfun(@rdivide, data, std(data));
+data = data_struct.data_2p;
+data = bsxfun(@rdivide, data, std(data));
 
 %% create stimulus matrix
 
@@ -60,40 +60,41 @@ Xstims{1} = bsxfun(@rdivide, Xstims{1}, std(Xstims{1}));
 % model: yhat = F[w2 * g(w1 * y + b1) + b2 + f(k * s)]
 %   latent variable components
 %       - g() relu (non-negative latent variables)
-%       - w1 = w2' (weight-tying)
 %   stimulus components
 %       - f() linear
 %       - k a linear filter on the stimulus
 %   F() linear
 
-% initialize model parameters
-init_params = RLVM.create_init_params( ...
-            stim_params, ...            % stimulus model parameters
-            size(data, 2), ...          % number of neurons
-            data_struct.lvs.num_lvs);   % number of latent vars to fit
-
 % construct initial model        
-net = RLVM(init_params, ...
-            'noise_dist', 'gauss', ...  % gaussian noise dist for 2p data
-            'act_func_hid', 'relu', ... % g() is relu
-            'weight_tie', 1, ...        % weight-tie constraint
-            'NL_types', 'lin', ...      % f() is linear
-            'spk_NL', 'lin');           % F() is linear
+layers = [size(data,2), data_struct.lvs.num_lvs, size(data,2)];
+act_funcs = {'relu', 'lin'};
+net = RLVM(layers, 1, ...
+    'stim_params', stim_params, ...
+    'noise_dist', 'gauss', ...  % gaussian noise dist for 2p data
+    'act_funcs', act_funcs, ... % g() is relu, F() is linear
+    'NL_types', 'lin');         % f() is linear
 
 % set latent variable regularization parameters
-net = net.set_reg_params('auto', ...    
-            'l2_weights', 1e-4, ...     % l2 penalty on coupling weights
-            'l2_biases', 1e-5);         % l2 penalty on biases
+net = net.set_reg_params('layer', ...    
+    'l2_weights', 1e-4, ...     % l2 penalty on coupling weights
+    'l2_biases', 1e-5);         % l2 penalty on biases
 
 % set stimulus model regularization parameters
 net = net.set_reg_params('stim', ...    
-            'l2', 1e-6);                % l2 penalty on psth values
+    'l2', 1e-6);                % l2 penalty on psth values
             
 % 'params' specifies that we are fitting model params 
 % (coupling weights and stim models; warning - may take some time)
-net = net.set_optim_params('display', 'iter', 'max_iter', 5000);
+net = net.set_optim_params( ...
+    'display', 'iter', ...
+    'max_iter', 5000, ...
+    'deriv_check', 1);
 tic
-net = net.fit_model('params', data, Xstims);
+net = net.fit_model( ...
+    'weights', ...
+    'pop_activity', data', ...
+    'Xstims', Xstims, ...
+    'indx_tr', 1:1000);
 t = toc
 
 %% display model components 
@@ -104,7 +105,7 @@ subplot(321)
 myimagesc(data_struct.lvs.coupling_mat);
 title('True')
 subplot(322)
-myimagesc(net.auto_subunit.w2');        % columns may be out of order
+myimagesc(net.layers(2).weights);        % columns may be out of order
 title('Estimated')
 
 % example neuron psths

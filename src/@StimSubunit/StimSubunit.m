@@ -708,29 +708,6 @@ methods (Hidden)
     end
 
     end % method
-
-    
-    function check_inputs(subunit, Xstims)
-    % subunit.check_inputs(Xstims)
-    %
-    % Checks if the parameters of subunit are consistent with the given
-    % input
-    %
-    % INPUTS:
-    %   pop_activity:   T x num_cells matrix
-    %   Xstims:         cell array of stims, each of which is a Tx_ matrix
-    %
-    % OUTPUTS:
-    %   none; throws error flag if parameters are not consistent
-    %
-    % CALLED BY:
-    %   none
-    
-    % check filter dimensions
-    assert(size(Xstims{subunit.x_target}, 2) == size(subunit.filt, 1), ...
-        'Xstims dims inconsistent with stimulus filter')
-
-    end % method
     
 end
 %% ********************  static methods ***********************************
@@ -785,7 +762,7 @@ methods (Static)
         % create filter
         s = 0.01;
         switch lower(init_filt)
-            case 'gaussian'
+            case 'gauss'
                 filt = s * randn(prod(stim_params.dims), ...
                                       stim_params.num_outputs);
             case 'uniform'
