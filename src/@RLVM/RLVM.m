@@ -793,6 +793,7 @@ methods
         case 'poiss'
             LL = -sum(pop_activity.*log(pred_activity) - pred_activity, 2);
             LLnull = -sum(pop_activity.*log(mean_activity) - mean_activity, 2);
+            LLnull(sum(mean_activity,2)==0) = NaN;
             LLsat = pop_activity.*log(pop_activity);
             LLsat(pop_activity==0) = 0;
             LLsat = -sum(LLsat - pop_activity, 2);
@@ -804,6 +805,7 @@ methods
             LL = -sum(LL1 + LL2, 2);
             LLnull = -sum(pop_activity.*log(mean_activity) + ...
                       (1-pop_activity).*log(1-mean_activity), 2);
+            LLnull(sum(mean_activity,2)==0) = NaN;
             LLsat = zeros(size(pop_activity,1),1);
         otherwise
             error('Invalid noise distribution')

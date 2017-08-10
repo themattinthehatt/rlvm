@@ -6,15 +6,14 @@ function net = fit_weights_latent_vars(net, fs)
 %
 % INPUTS:
 %   fs:                 struct created in method RLVM.fit_model
-%       pop_activity:   T x num_cells matrix of population activity
+%       pop_activity:   num_cells x T matrix of population activity
 %       Xstims:         cell array holding T x _ matrices of stim info
 %
 % OUTPUTS:
 %   net:                updated RLVM object
 %
 % TODO:
-%   nontarg_g does not work for selectively fitting shared StimSubunits
-%   (need to use/fit only part of stim_weights)
+%   non_targ_sig does not work for selectively fitting shared StimSubunits
 
 % ************************** DEFINE USEFUL QUANTITIES *********************
 switch net.fit_params.noise_dist
@@ -32,12 +31,16 @@ num_cells = size(net.layers(end).weights,1);
 num_layers = length(net.layers);
 
 if net.fit_params.fit_stim_individual || net.fit_params.fit_stim_shared
+    % fit all stim subunit outputs
     num_subs = length(net.stim_subunits);
     x_targets = [net.stim_subunits(:).x_target];
     mod_signs = [net.stim_subunits(:).mod_sign];
 elseif ~isempty(net.stim_subunits)
-    % use all stim subunit outputs for model evaluation
+    % don't fit stim subunit outputs but use for model evaluation
     num_subs = 0;
+    if net.fit_params.fit_stim_shared
+        error('Holding weights fixed for shared subunits not supported')
+    end
 else
     num_subs = [];
 end
@@ -128,7 +131,18 @@ if net.fit_params.fit_stim_shared
 end
     
 % keep track of output from model components that are not being fit
-
+if num_subs == 0
+    % loop over the subunits and compute the generating signals
+    non_targ_sig = zeros(size(fs.pop_activity));
+    for i = 1:length(net.stim_subunits)
+        temp_sub = net.stim_subunits(i);
+        temp_g = fs.Xstims{temp_sub.x_target} * temp_sub.filt;
+        temp_f = temp_sub.apply_NL_func(temp_g);
+        non_targ_sig = non_targ_sig + (temp_sub.mod_sign * temp_f)';
+    end
+else
+    non_targ_sig = 0;
+end
     
 % ************************** FIT MODEL ************************************
 optim_params = net.optim_params;
@@ -282,10 +296,14 @@ net.fit_history = cat(1, net.fit_history, curr_fit_details);
         if ii == int_layer
             z{ii} = z{ii} + stim_weights * fgint';
         end
-        if ii == num_layers && net.fit_params.fit_stim_individual
-            for jj = 1:num_subs
-                z{ii} = z{ii} + (mod_signs(jj) * fgint{jj})';
+        if ii == num_layers
+            if net.fit_params.fit_stim_individual
+                for jj = 1:num_subs
+                    z{ii} = z{ii} + (mod_signs(jj) * fgint{jj})';
+                end
             end
+            % add contribution from part of model not being fit
+            z{ii} = z{ii} + non_targ_sig;
         end
         a{ii} = net.layers(ii).apply_act_func(z{ii});
     end
@@ -335,8 +353,6 @@ net.fit_history = cat(1, net.fit_history, curr_fit_details);
         temp1 = net.layers(ii).apply_act_deriv(z{ii});
         temp2 = (weights{ii+1}' * delta);
         delta = temp1 .* temp2;
-%         delta = net.layers(ii).apply_act_deriv(z{ii}) .* ...
-%                 (weights{ii+1}' * delta);
         grad_weights{ii} = delta * a{ii-1}';
         grad_biases{ii} = sum(delta, 2);
         if ii == int_layer
