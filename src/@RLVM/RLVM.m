@@ -1028,7 +1028,8 @@ methods
             [r2, LL_struct] = net.get_r2(pop_activity, a{end});
         case 'sloo'
             [r2, LL_struct] = net.get_sloo_r2(pop_activity, ...
-                                              'inputs', inputs);
+                                              'inputs', inputs, ...
+                                              'Xstims', Xstims);
     end
     
     % evaluate cost_func
