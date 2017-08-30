@@ -1280,10 +1280,10 @@ methods
     end
     
     % fit model
-    if strcmp(fit_type, 'weights')
+    if any(strcmp(fit_type, {'weights', 'inputs'}))
         net = net.fit_weights_latent_vars(fit_struct);
-    elseif strcmp(fit_type, 'inputs')
-        net = net.fit_weights_latent_vars_nn(fit_struct);
+%     elseif strcmp(fit_type, 'inputs')
+%         net = net.fit_weights_latent_vars_nn(fit_struct);
     elseif strcmp(fit_type, 'mml_weights')
         [net, weights, latent_vars] = net.fit_weights(fit_struct);
         varargout{1} = weights;
@@ -1437,7 +1437,7 @@ end
 methods
     
     function fig_handle = disp_stim_filts(net, varargin)
-    % net = net.disp_stim_filts(<cell_num>)
+    % fig_handle = net.disp_stim_filts(<cell_num>)
     %
     % Plots stimulus filters of various subunits for a given cell
     %
@@ -1543,7 +1543,55 @@ methods
     end
     
     end % method
-       
+     
+    
+    function fig_handle = disp_lvs(net, time_vals, layer, varargin)
+    % fig_handle = net.disp_lvs(varargin);
+    %
+    % Plots lvs of current RLVM object
+    %
+    % INPUTS:
+    %   time_vals:          1 x T vector of time points
+    %   layer:              specify which layers lvs come from
+    %
+    %   optional key-value pairs:
+    %       'pop_activity'
+    %           num_cells x T matrix of neural activity
+    %       'Xstims', cell array
+    %           cell array of stimuli, each of which is T x filt_len
+    %       'inputs'
+    %           num_inputs x T matrix of external input activity
+    %       'indx_tr', vector
+    %           subset of 1:T that specifies portion of data used for 
+    %           evaluation (default is all data)
+    %
+    % OUTPUTS:
+    %   fig_handle:         handle of created figure
+    
+    % get lvs
+    [a, ~, ~, ~] = get_mod_internals(net, varargin{:});
+    lvs = a{layer};
+    num_lvs = size(lvs, 1);
+    
+    if isempty(time_vals)
+        time_vals = 1:size(a{1},2);
+    end
+    
+    fig_handle = figure;
+    for i = 1:num_lvs
+        ax(i) = subplot(num_lvs, 1, i);
+        plot(time_vals, lvs(i,:));
+        title(sprintf('Layer %g, latent variable %g', layer, i))
+        set(fig_handle.CurrentAxes, 'FontSize', 14)
+        if i == num_lvs
+            xlabel('Time')
+        end
+    end
+    linkaxes(ax, 'x')
+    
+    end
+        
+    
 end
 
 %% ********************* hidden methods ***********************************

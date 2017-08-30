@@ -16,6 +16,12 @@ function net = fit_weights_latent_vars(net, fs)
 %   non_targ_sig does not work for selectively fitting shared StimSubunits
 
 % ************************** DEFINE USEFUL QUANTITIES *********************
+
+% use fs.inputs for both autoencoder and general nn input
+if isempty(fs.inputs)
+    fs.inputs = fs.pop_activity;
+end
+
 switch net.fit_params.noise_dist
     case 'gauss'
         Z = numel(fs.pop_activity);
@@ -236,7 +242,7 @@ net.fit_history = cat(1, net.fit_history, curr_fit_details);
         fgint = gint;               % store subunit outputs
         filts = cell(num_subs,1);   % filters for all (target) subs
     elseif net.fit_params.fit_stim_individual
-        gint = cell(num_subs,1);   % store filter outputs
+        gint = cell(num_subs,1);    % store filter outputs
         fgint = gint;               % store subunit outputs
         filts = cell(num_subs,1);   % filters for all (target) subs        
     end
@@ -283,7 +289,7 @@ net.fit_history = cat(1, net.fit_history, curr_fit_details);
         if ii == 1
             if ~isempty(weights{1})
                 % auto model
-                z{ii} = bsxfun(@plus, weights{ii}*fs.pop_activity, ...
+                z{ii} = bsxfun(@plus, weights{ii}*fs.inputs, ...
                                       biases{ii});
             else
                 % just stimulus model
@@ -367,7 +373,7 @@ net.fit_history = cat(1, net.fit_history, curr_fit_details);
         % else use delta calculated above
     end
     if ~isempty(net.layers(1).weights)
-        grad_weights{1} = delta * fs.pop_activity';
+        grad_weights{1} = delta * fs.inputs';
         grad_biases{1} = sum(delta, 2);
     else
         grad_weights{1} = [];
