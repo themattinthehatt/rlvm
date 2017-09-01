@@ -5,7 +5,7 @@ classdef StimSubunit
 % Reference:
 %
 % Author: Matt Whiteway
-%   07/11/16
+%   09/01/17
 
 properties
     filt            % vector or matrix of filter coefficients
@@ -33,7 +33,7 @@ methods
     function subunit = StimSubunit(stim_params, init_filt, mod_sign, ...
                                    NL_type, x_target)
     % subunit = StimSubunit(stim_params, init_filt, mod_sign, ...
-    %                              NL_type, num_outputs, <x_target>)
+    %                       NL_type, num_outputs, <x_target>)
     % 
     % Constructor for StimSubunit class
     %
@@ -65,13 +65,13 @@ methods
     
     % parse inputs
     assert(ismember(mod_sign, [-1, 1]), ...
-        'Invalid mod_sign')
+        'Invalid mod_sign %g', mod_sign)
     assert(ismember(NL_type, subunit.allowed_stim_NLtypes), ...
-        'Invalid NL_type')
+        'Invalid NL_type "%s"', NL_type)
     
     % initialize weights
     [filt_, init_param_struct] = StimSubunit.set_init_filt_stat( ...
-                                    stim_params, init_filt);
+        stim_params, init_filt);
     
     % set properties
     subunit.filt = filt_;
@@ -140,12 +140,12 @@ methods
                 subunit.stim_params.tent_spacing = varargin{i+1};
             case 'boundary_conds'
                 assert(all(ismember(varargin{i+1}, [-1, 0, Inf])), ...
-                    'Incorrect boundary condition specification')
+                    'Invalid boundary condition %g', varargin{i+1})
                 subunit.stim_params.boundary_conds = varargin{i+1};
             case 'split_pts'
                 subunit.stim_params.split_pts = varargin{i+1};
             otherwise
-                error('Invalid input flag');
+                error('Invalid input flag "%s"', varargin{i});
         end
         i = i + 2;
     end
@@ -182,7 +182,7 @@ methods
                 % build up a [1xP] matrix; P is the number of reg types
                 reg_vals = cat(2,reg_vals,varargin{i+1}); 
             otherwise
-                error('Invalid input flag');
+                error('Invalid input flag "%s"', varargin{i});
         end
         i = i + 2;
     end
@@ -194,7 +194,7 @@ methods
     
     % apply regs
     assert(all(reg_vals >= 0), ...
-        'regularization hyperparameters must be non-negative');
+        'Regularization hyperparameters must be non-negative');
     for i = 1:length(reg_types)
         subunit.reg_lambdas.(reg_types{i}) = reg_vals(i);
     end
@@ -264,7 +264,7 @@ methods
                     'Invalid fitting indices')
                 indx_tr = varargin{i+1};
             otherwise
-                error('Invalid input flag');
+                error('Invalid input flag "%s"', varargin{i});
         end
         i = i + 2;
     end
@@ -529,7 +529,7 @@ methods (Hidden)
     num_pix = squeeze(subunit.stim_params.dims(2:3));	
     allowed_reg_types = {'d2xt', 'd2x', 'd2t'};
     assert(ischar(reg_type) && ismember(reg_type, allowed_reg_types), ...
-        'not an allowed regularization type');
+        'Invalid regularization type "%s"', reg_type);
 
     has_split = ~isempty(subunit.stim_params.split_pts);
     
@@ -561,8 +561,7 @@ methods (Hidden)
     if num_pix == 1 
 
         assert(ismember(reg_type, {'d2t'}), ...
-            'StimSubunit:invalidoption', ...
-            'can only do temporal reg for stimuli without spatial dims');
+            'Can only do temporal reg for stimuli without spatial dims');
         tmat = spdiags([et -2*et et], [-1 0 1], num_lags, num_lags);
         if subunit.stim_params.boundary_conds(1) == -1
             % if periodic boundary cond
@@ -570,7 +569,7 @@ methods (Hidden)
         end
         if has_split
             assert(subunit.stim_params.split_pts(1) == 1, ...
-                'check stim_params split_pts specification');
+                'Check stim_params split_pts specification');
             tmat = StimSubunit.split_tmat(tmat, ...
                 subunit.stim_params.split_pts);
         end
@@ -628,7 +627,7 @@ methods (Hidden)
                     D1x = StimSubunit.split_tmat(D1x, ...
                         subunit.stim_params.split_pts);
                 else
-                    error('invalid split dim');
+                    error('Invalid split dim');
                 end
             end
         It = speye(num_lags);
@@ -670,7 +669,8 @@ methods (Hidden)
                 D1y(end,1) = 1; D1y(1,end) = 1;
             end
             if has_split && ismember(subunit.stim_params.split_pts(1), [2 3])
-                error('Cant do splits along spatial dims with 2-spatial dim stims yet'); 
+                error(['Can''t do splits along spatial dims with ', ...
+                       '2-spatial dim stims yet']); 
             end
             tmat = kron(Iy, kron(D1x, It)) + kron(D1y, kron(Ix, It));
         
@@ -698,7 +698,8 @@ methods (Hidden)
                     D1t = StimSubunit.split_tmat(D1t, ...
                         subunit.stim_params.split_pts);
                 elseif ismember(subunit.stim_params.split_pts(1), [2 3])
-                    error('Cant do splits along spatial dims with 2-spatial dim stims yet'); 
+                    error(['Can''t do splits along spatial dims with ', ...
+                           '2-spatial dim stims yet']); 
                 end
             end
             tmat = kron(D1y, kron(Ix, It)) + ...
@@ -769,7 +770,7 @@ methods (Static)
                 filt = s * rand(prod(stim_params.dims), ...
                                       stim_params.num_outputs) - s/2;
             otherwise
-                error('Invalid init_filt string')
+                error('Invalid init_filt string "%s"', init_filt)
         end
     elseif ismatrix(init_filt)
         % use 'init_filt' to initialize filter
@@ -789,7 +790,7 @@ methods (Static)
     
 	function stim_params = create_stim_params(dims, num_outputs, varargin)
     % stim_params = StimSubunit.create_stim_params(...
-    %                                       stim_dims, num_outputs, kargs)
+    %   stim_dims, num_outputs, kargs)
     %
     % Creates a struct containing stimulus parameters
     %
@@ -845,13 +846,14 @@ methods (Static)
             case 'boundary_conds'
                 for j = 1:length(varargin{i+1})
                     assert(ismember(varargin{i+1}(j), [Inf, 0, -1]), ...
-                        'Incorrect boundary condition specification')
+                        'Invalid boundary condition specification %g', ...
+                        varargin{i+1}(j))
                 end
                 boundary_conds = varargin{i+1};
             case 'split_pts'
                 split_pts = varargin{i+1};
             otherwise
-                error('Invalid input flag'); 
+                error('Invalid input flag "%s"', varargin{i}); 
         end	
         i = i + 2;
     end
@@ -873,11 +875,12 @@ methods (Static)
     dt = stim_dt / up_fac; 
 
     % create struct to output
-    stim_params = struct('dims', dims, 'dt', dt, 'up_fac', up_fac,...
-                         'tent_spacing', tent_spacing, ...
-                         'boundary_conds',boundary_conds,...
-                         'split_pts',split_pts, ...
-                         'num_outputs', num_outputs);
+    stim_params = struct( ...
+        'dims', dims, 'dt', dt, 'up_fac', up_fac,...
+        'tent_spacing', tent_spacing, ...
+        'boundary_conds',boundary_conds,...
+        'split_pts',split_pts, ...
+        'num_outputs', num_outputs);
 
     end % method
 	
@@ -908,7 +911,8 @@ methods (Static)
     
     % no support for more than two spatial dims
     if length(sz) > 3
-        warning('More than two spatial dimensions not supported; creating Xmat anyways...');
+        warning(['More than two spatial dimensions not supported; ', ...
+                 'creating Xmat anyways...']);
     end
 
     % check that the size of stim matches with the specified stim_params

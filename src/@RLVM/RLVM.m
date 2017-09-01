@@ -8,8 +8,8 @@ classdef RLVM
 %   Andrew Ng
 %
 % Author: Matt Whiteway
-%   11/05/16
-
+%   09/01/17
+%
 % TODO
 %   - throw error if num_stim_subs > 0 but no stim_params are provided
 %   - interface with stim subunit in general sucks
@@ -173,11 +173,11 @@ methods
             % layers
             case 'noise_dist'
                 assert(ismember(varargin{i+1}, net.allowed_noise_dists),...
-                    'Invalid noise distribution')
+                    'Invalid noise distribution "%s"', varargin{i+1})
                 noise_distribution = varargin{i+1};
             case 'act_funcs'
                 assert(all(ismember(varargin{i+1}, net.allowed_auto_NLtypes)), ...
-                    'Invalid layer nonlinearities')
+                    'Invalid layer nonlinearities "%s"', varargin{i+1})
                 act_funcs = varargin{i+1};
                 % if act_funcs is specified as a single string, default to 
                 % using this act_func for all layers
@@ -191,7 +191,7 @@ methods
                 end
             case 'auto_init'
                 assert(all(ismember(varargin{i+1}, net.allowed_init_types)), ...
-                    'Invalid weight init types')
+                    'Invalid weight init types "%s"', varargin{i+1})
                 auto_init_filt = varargin{i+1};
                 % if auto_init_filt is specified as a single string, 
                 % default to using this auto_init_filt for all layers
@@ -227,7 +227,7 @@ methods
                 end
             case 'nl_types'
                 assert(all(ismember(varargin{i+1}, net.allowed_stim_NLtypes)), ...
-                    'Invalid NL_type')
+                    'Invalid NL_type "%s"', varargin{i+1})
                 NL_types = varargin{i+1};
                 % if NL_types is specified as a single string, default to 
                 % using this NL_type for all subunits
@@ -253,7 +253,7 @@ methods
                     error('Invalid number of x_targets')
                 end
             otherwise
-                error('Invalid input flag');
+                error('Invalid input flag "%s"', varargin{i});
         end
         i = i + 2;
     end
@@ -394,23 +394,21 @@ methods
                     'fit_stim_individual option must be set to 0 or 1')
                 assert(~(varargin{i+1} == 1 ...
                     && net.fit_params.fit_stim_shared == 1), ...
-                    'RLVM:invalidoption', ...
-                    'cannot fit both individual and shared subunits')
+                    'Cannot fit both individual and shared subunits')
                 net.fit_params.fit_stim_individual = varargin{i+1};
             case 'fit_stim_shared'
                 assert(ismember(varargin{i+1}, [0, 1]), ...
                     'fit_stim_shared option must be set to 0 or 1')
                 assert(~(varargin{i+1} == 1 ...
                     && net.fit_params.fit_stim_individual == 1), ...
-                    'RLVM:invalidoption', ...
-                    'cannot fit both individual and shared subunits')
+                    'Cannot fit both individual and shared subunits')
                 net.fit_params.fit_stim_shared = varargin{i+1};
             case 'noise_dist'
                 assert(ismember(varargin{i+1}, net.allowed_noise_dists),...
-                    'Invalid noise distribution')
+                    'Invalid noise distribution "%s"', varargin{i+1})
                 net.fit_params.noise_dist = varargin{i+1};
             otherwise
-                error('Invalid input flag');
+                error('Invalid input flag "%s"', varargin{i});
         end
         i = i + 2;
     end
@@ -460,32 +458,33 @@ methods
         switch lower(varargin{i})
             case 'optimizer'
                 assert(ismember(varargin{i+1}, net.allowed_optimizers), ...
-                    'invalid optimizer')
+                    'Invalid optimizer')
                 net.optim_params.optimizer = varargin{i+1};
             case 'batch_size'
                 assert(mod(net.data_params.examples, varargin{i+1}) == 0, ...
-                    'batch size should evenly divide number of examples')
+                    'batch_size should evenly divide number of examples')
                 net.optim_params.batch_size = varargin{i+1};
             case 'display'
                 assert(ismember(varargin{i+1}, {'off', 'iter', 'batch'}), ...
-                    'invalid parameter for display')
+                    'Invalid display option "%s"', varargin{i+1})
                 net.optim_params.Display = varargin{i+1};
             case 'max_iter'
                 assert(varargin{i+1} > 0, ...
-                    'max number of iterations must be greater than zero')
+                    'Max number of iterations must be greater than zero')
                 net.optim_params.max_iter = varargin{i+1};
                 net.optim_params.maxIter = varargin{i+1};
                 net.optim_params.maxFunEvals = 2*varargin{i+1};
             case 'monitor'
-                assert(ismember(varargin{i+1}, {'off', 'iter', 'batch', 'both'}), ...
-                    'invalid parameter for monitor')
+                assert(ismember(varargin{i+1}, ...
+                    {'off', 'iter', 'batch', 'both'}), ...
+                    'Invalid monitor option "%s"', varargin{i+1})
                 net.optim_params.monitor = varargin{i+1};
             case 'deriv_check'
                 assert(ismember(varargin{i+1}, [0, 1]), ...
                     'deriv_check option must be set to 0 or 1')
                 net.optim_params.deriv_check = varargin{i+1};
             otherwise
-                error('Invalid input flag');
+                error('Invalid input flag "%s"', varargin{i});
         end
         i = i + 2;
     end
@@ -548,7 +547,7 @@ methods
             if ~isempty(layers_loc)
                 assert(all(ismember(varargin{layers_loc+1}, ...
                                     1:length(net.layers))), ...
-                    'invalid target layers specified')
+                    'Invalid target layers specified')
                 layers_inds = varargin{layers_loc+1};
                 % remove sub_inds from varargin; will be passed to another 
                 % method
@@ -570,7 +569,7 @@ methods
             if ~isempty(subs_loc)
                 assert(all(ismember(varargin{subs_loc+1}, ...
                                     1:length(net.stim_subunits))), ...
-                    'invalid target subunits specified')
+                    'Invalid target subunits specified')
                 sub_inds = varargin{subs_loc+1};
                 % remove sub_inds from varargin; will be passed to another 
                 % method
@@ -586,7 +585,7 @@ methods
                     net.stim_subunits(sub_inds(i)).set_reg_params(varargin{:}); 
             end
         otherwise
-            error('Invalid reg_target; must be auto or stim')
+            error('Invalid reg_target "%s"', reg_target)
     end
     
     end % method
@@ -665,11 +664,12 @@ methods
     end
    
     % make sure the proper data is present
-    if ~isempty(net.layers(1).weights) && (isempty(pop_activity) && isempty(inputs))
-        error('must specify pop_activity to fit model')
+    if ~isempty(net.layers(1).weights) && (isempty(pop_activity) && ...
+            isempty(inputs))
+        error('Must specify pop_activity to fit model')
     end
     if ~isempty(net.stim_subunits) && isempty(Xstims)
-        error('must specify Xstims to fit model')
+        error('Must specify Xstims to fit model')
     end
     % TODO error-checkin on input
     
@@ -804,11 +804,12 @@ methods
             LL2(pred_activity==1) = 0;
             LL = -sum(LL1 + LL2, 2);
             LLnull = -sum(pop_activity.*log(mean_activity) + ...
-                      (1-pop_activity).*log(1-mean_activity), 2);
+                          (1-pop_activity).*log(1-mean_activity), 2);
             LLnull(sum(mean_activity,2)==0) = NaN;
             LLsat = zeros(size(pop_activity,1),1);
         otherwise
-            error('Invalid noise distribution')
+            error('Invalid noise distribution "%s"', ...
+                net.fit_params.noise_dist)
     end
     
     r2 = 1 - (LLsat-LL)./(LLsat-LLnull);
@@ -869,7 +870,8 @@ methods
             case 'inputs'
                 if ~isempty(inputs)
                     assert(size(varargin{i+1}, 2) == size(pop_activity, 2), ...
-                        'Input matrix size inconsistent with population activity')
+                        ['Input matrix size inconsistent with ', ...
+                         'population activity'])
                 end
                 inputs = varargin{i+1};
             case 'indx_tr'
@@ -878,7 +880,7 @@ methods
                     'Invalid fitting indices')
                 indx_tr = varargin{i+1};
             otherwise
-                error('Invalid input flag');
+                error('Invalid input flag "%s"', varargin{i});
         end
         i = i + 2;
     end
@@ -907,9 +909,9 @@ methods
     
         % get activation values for all model components
         a = temp_net.get_mod_internals( ...
-                        'pop_activity', pop_activity, ...
-                        'inputs', inputs, ...
-                        'Xstims', Xstims);
+            'pop_activity', pop_activity, ...
+            'inputs', inputs, ...
+            'Xstims', Xstims);
 
         % evaluate pseudo-r^2
         [temp_r2, temp_LL_struct] = temp_net.get_r2(pop_activity, a{end});
@@ -987,7 +989,8 @@ methods
             case 'inputs'
                 if ~isempty(inputs)
                     assert(size(varargin{i+1}, 2) == size(pop_activity, 2), ...
-                        'Input matrix size inconsistent with population activity')
+                        ['Input matrix size inconsistent with ', ...
+                         'population activity'])
                 end
                 inputs = varargin{i+1};
             case 'indx_tr'
@@ -997,10 +1000,10 @@ methods
                 indx_tr = varargin{i+1};
             case 'r2_type'
                 assert(ismember(varargin{i+1}, {'full', 'sloo'}), ...
-                    'Invalid r2_type');
+                    'Invalid r2_type "%s"', varargin{i+1});
                 r2_type = varargin{i+1};
             otherwise
-                error('Invalid input flag');
+                error('Invalid input flag "%s"', varargin{i});
         end
         i = i + 2;
     end
@@ -1027,9 +1030,10 @@ methods
         case 'full'
             [r2, LL_struct] = net.get_r2(pop_activity, a{end});
         case 'sloo'
-            [r2, LL_struct] = net.get_sloo_r2(pop_activity, ...
-                                              'inputs', inputs, ...
-                                              'Xstims', Xstims);
+            [r2, LL_struct] = net.get_sloo_r2( ...
+                pop_activity, ...
+                'inputs', inputs, ...
+                'Xstims', Xstims);
     end
     
     % evaluate cost_func
@@ -1048,7 +1052,7 @@ methods
             LL2(a{end}==1) = 0;
             LL = -sum(LL1 + LL2, 2);
         otherwise
-            error('Invalid noise distribution')
+            error('Invalid noise distribution "%s"', varargin{i})
     end
     cost_func = sum(LL) / Z;
     
@@ -1139,7 +1143,7 @@ methods
     
     assert(ismember(fit_type, {'weights', 'mml_weights', ...
                                'mml_latent_vars', 'mml_alt', 'inputs'}), ...
-        'Invalid fit_type specified')
+        'Invalid fit_type "%s"', fit_type)
     
     % DEFINE DEFAULTS
     % put all relevant data into fitting_struct, which acts as a common
@@ -1174,25 +1178,26 @@ methods
                 indx_tr = varargin{i+1};
             case 'pretraining'
                 assert(ismember(varargin{i+1}, net.allowed_pretraining), ...
-                    'invalid pretraining option')
+                    'Invalid pretraining option "%s"', varargin{i+1})
                 pretraining = varargin{i+1};
             case 'init_weights'
                 if ischar(varargin{i+1})
                     assert(ismember(varargin{i+1}, {'model', 'gauss'}), ...
-                        'Unsupported init_weights specified')
+                        'Invalid init_weights "%s"', varargin{i+1})
                 elseif isvector(varargin{i+1})
-                    assert(length(varargin{i+1}) == ...
-                        net.num_cells + net.num_cells * net.auto_subunit.num_hid_nodes, ...
+                    assert(length(varargin{i+1}) == net.num_cells +  ...
+                        net.num_cells * net.auto_subunit.num_hid_nodes, ...
                         'init_weights vector has improper size')
                 else
-                    warning('Incorrect init_weights format; defaulting to model')
+                    warning(['Incorrect init_weights format; ', ...
+                             'defaulting to "model"'])
                     init_weights = 'model';
                 end
                 init_weights = varargin{i+1};
             case 'init_latent_vars'
                 if ischar(varargin{i+1})
                     assert(ismember(varargin{i+1}, {'model', 'gauss'}), ...
-                        'Unsupported init_latent_vars specified')
+                        'Invalid init_latent_vars "%s"', varargin{i+1})
                 elseif ismatrix(varargin{i+1})
                     if isnan(indx_tr)
                         assert(size(varargin{i+1}) == ...
@@ -1204,33 +1209,34 @@ methods
                             'Incorrect size for latent vars')
                     end
                 else
-                    warning('Incorrect init_latent_vars format; defaulting to model')
+                    warning(['Incorrect init_latent_vars format; ', ...
+                             'defaulting to model'])
                     init_latent_vars = 'model';
                 end
                 init_latent_vars = varargin{i+1};
             case 'init_method'
                 assert(ismember(varargin{i+1}, {'auto', 'init'}), ...
-                    'Improper init_method specified')
+                    'Invalid init_method "%s"', varargin{i+1})
                 init_method = varargin{i+1};
             case 'first_fit'
                 assert(ismember(varargin{i+1}, {'weights', 'latent_vars'}), ...
-                    'Improper fit_first specified')
+                    'Invalid fit_first "%s"', varargin{i+1})
                 first_fit = varargin{i+1};
             otherwise
-                error('Invalid input flag');
+                error('Invalid input flag "%s"', varargin{i});
         end
         i = i + 2;
     end
     
     % make sure the proper data is present
     if ~isempty(net.layers(1).weights) && isempty(pop_activity)
-        error('must specify pop_activity to fit model')
+        error('Must specify pop_activity to fit model')
     end
     if ~isempty(net.stim_subunits) && isempty(Xstims)
-        error('must specify Xstims to fit model')
+        error('Must specify Xstims to fit model')
     end
     if strcmp(fit_type, 'inputs') && isempty(inputs)
-        error('must specify an input matrix to fit model')
+        error('Must specify an input matrix to fit model')
     end
     
     % create fitting struct
@@ -1282,8 +1288,6 @@ methods
     % fit model
     if any(strcmp(fit_type, {'weights', 'inputs'}))
         net = net.fit_weights_latent_vars(fit_struct);
-%     elseif strcmp(fit_type, 'inputs')
-%         net = net.fit_weights_latent_vars_nn(fit_struct);
     elseif strcmp(fit_type, 'mml_weights')
         [net, weights, latent_vars] = net.fit_weights(fit_struct);
         varargout{1} = weights;
@@ -1297,7 +1301,7 @@ methods
         varargout{1} = weights;
         varargout{2} = latent_vars;
     else
-        error('Invalid fit_type')
+        error('Invalid fit_type "%s"', fit_type)
     end
     
     end % method
@@ -1420,7 +1424,7 @@ methods
                 temp_data = a{1};
                 
             otherwise
-                error('Invalid pretraining string specified')
+                error('Invalid pretrainer "%s"', pretraining)
         end   
         
         net.layers(layer).weights = temp_weights;
@@ -1463,8 +1467,9 @@ methods
 
     % set figure position
     fig_handle = figure;
-    set(fig_handle,'Units','normalized');
-    set(fig_handle,'OuterPosition',[0.05 0.55 0.6 0.4]); %[left bottom width height]
+    set(fig_handle, 'Units', 'normalized');
+    set(fig_handle, 'OuterPosition', ...
+        [0.05 0.55 0.6 0.4]); % [left bottom width height]
 
     if net.stim_subunits(1).stim_params.num_outputs == net.num_cells
         % individual stimulus
@@ -1624,7 +1629,7 @@ methods (Hidden)
         if ~isempty(fit_struct.pop_activity)
             % ensure first dimension is same across pop_activity and Xstims
             assert(size(fit_struct.pop_activity, 2) == size(fit_struct.Xstims{1}, 1), ...
-                'time dim must be consisent across pop activity and Xstims')
+                'Time dim must be consisent across pop activity and Xstims')
         end
     end
     
@@ -1633,7 +1638,7 @@ methods (Hidden)
     if net.fit_params.fit_stim_individual || net.fit_params.fit_stim_shared
         % ensure Xstims exists
         assert(~isempty(fit_struct.Xstims), ...
-            'must provide Xstims matrix to fit stim subunit')
+            'Must provide Xstims matrix to fit stim subunit')
     end
     
     if strcmp(fit_type, 'params')

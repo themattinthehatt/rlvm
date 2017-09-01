@@ -1,12 +1,11 @@
 classdef Layer
     
 % Class implementing an individual layer of an RLVM object
-%   (Notes)
 %
 % Reference:
 %
 % Author: Matt Whiteway
-%   11/05/16
+%   09/01/17
 
 properties
     weights         % matrix of weights
@@ -63,8 +62,7 @@ methods
     end
 
     % parse inputs
-    assert(num_out > 0, ...
-        'Must have positive number of outputs')
+    assert(num_out > 0, 'Must have positive number of outputs')
     
     % define defaults
     act_func_ = 'relu';
@@ -75,25 +73,23 @@ methods
     i = 1;
     while i <= length(varargin)
         switch lower(varargin{i})
-            
-            % layers
             case 'act_func'
                 assert(ismember(varargin{i+1}, layer.allowed_auto_NLtypes),...
-                    'Invalid activation function')
+                    'Invalid activation function "%s"', varargin{i+1})
                 act_func_ = varargin{i+1};
             case 'num_ext_inputs'
                 assert(~isempty(varargin{i+1}), ...
                     'Invalid number of external inputs specified')
                 num_ext_inputs = varargin{i+1};
             otherwise
-                error('Invalid input flag');
+                error('Invalid input flag "%s"', varargin{i});
         end
         i = i + 2;
     end
     
     % initialize weights
     [weights_, biases_, init_params_] = Layer.set_init_weights_stat(...
-                                            init_method, num_in, num_out);
+        init_method, num_in, num_out);
         
     % set properties
     layer.weights = weights_;
@@ -138,10 +134,10 @@ methods
         switch lower(varargin{i})
             case 'act_func_hid'
                 assert(ismember(varargin{i+1}, layer.allowed_auto_NLtypes), ...
-                    'invalid activation function');
+                    'Invalid activation function "%s"', varargin{i+1});
                 layer.act_func_hid = varargin{i+1};
             otherwise
-                error('Invalid input flag')
+                error('Invalid input flag "%s"', varargin{i})
         end
         i = i + 2;
     end
@@ -183,7 +179,7 @@ methods
                     'reg value must be nonnegative')
                 layer.reg_lambdas.d2t_hid = varargin{i+1};
             otherwise
-                error('Invalid input flag');
+                error('Invalid input flag "%s"', varargin{i});
         end
         i = i + 2;
     end
@@ -251,7 +247,7 @@ methods
                     'Invalid fitting indices')
                 indx_tr = varargin{i+1};
             otherwise
-                error('Invalid input flag');
+                error('Invalid input flag "%s"', varargin{i});
         end
         i = i + 2;
     end
@@ -431,7 +427,7 @@ methods (Static)
                     weights = temp;
                 end
             otherwise
-                error('incorrect initialization string')
+                error('Invalid initialization string "%s"', init_method)
         end
         biases = zeros(num_out, 1);
 
