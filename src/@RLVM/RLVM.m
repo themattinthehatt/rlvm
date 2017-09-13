@@ -1428,8 +1428,10 @@ methods
         end   
         
         net.layers(layer).weights = temp_weights;
+        net.layers(layer).init_params.init_weights = pretraining;
         if net_symmetric
             net.layers(end-layer+1).weights = temp_weights';
+            net.layers(end-layer+1).init_params.init_weights = pretraining;
         end
         
     end
