@@ -504,7 +504,7 @@ methods
     % subunits and layers
     %
     % INPUTS:
-    %   reg_target:     'layer' | 'stim'
+    %   reg_target:     'layer' | 'stim' | 'auto'
     %                   string specifying which model components to apply 
     %                   the specified reg params to
     %
