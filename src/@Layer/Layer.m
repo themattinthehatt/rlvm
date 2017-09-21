@@ -16,13 +16,11 @@ properties
     init_params     % struct saving initialization parameters
       % rng_state
       % init_weights
-    latent_vars    % matrix of latent variable states when inferring them 
-                   % (after activation function)
 end
 
-properties (Hidden) % inherited from RLVM
-	allowed_auto_regtypes = {'l2_biases', 'l2_weights', 'd2t_hid'};
-    allowed_auto_NLtypes = {'lin', 'relu', 'sigmoid', 'softplus'};
+properties (Hidden)
+	allowed_reg_types = {'l2_biases', 'l2_weights'};
+    allowed_act_funcs = {'lin', 'relu', 'sigmoid', 'softplus'};
     allowed_init_types = {'gauss', 'trunc_gauss', 'uniform', 'orth'}
     min_pred_rate   % min val for logs
     max_g = 50      % max val for exponentials
@@ -32,28 +30,27 @@ end
 methods
       
     function layer = Layer(num_in, num_out, init_method, varargin)
-    % layer = Layer(num_in, num_out, init_method, kargs);
+    % layer = Layer(num_in, num_out, init_method, kwargs);
     % 
     % Constructor for Layer class
     %
     % INPUTS:
-    %   num_in:         number of input nodes
-    %   num_out:        number of output nodes
-    %   init_method:    string specifying a random initialization; see
-    %                   allowed_init_types for supported options
-    %                   or a 2x1 cell array containt weights and biases of
-    %                   appropriate dimensions
+    %   num_in (scalar): number of input nodes
+    %   num_out (scalar): number of output nodes
+    %   init_method (string): specifies a random initialization; see
+    %       allowed_init_types for supported options; or a 2x1 cell array 
+    %       containt weights and biases of appropriate dimensions
     %
     %   optional key-value pairs
     %       'act_func', string
     %           specifies activation function for layer; see 
-    %           allowed_auto_NLtypes for supported options (default: relu)
+    %           allowed_act_funcs for supported options (default: relu)
     %       'num_ext_inputs', scalar
     %           specifies number of external inputs to be integrated into
     %           this layer
     %
     % OUTPUTS:
-    %   layer: initialized Layer object
+    %   layer (Layer object): initialized Layer object
     
     if nargin == 0
         % handle the no-input-argument case by returning a null model. This
@@ -62,19 +59,17 @@ methods
     end
 
     % parse inputs
-    assert(num_out > 0, 'Must have positive number of outputs')
+    assert(num_out > 0, 'Must specify positive number of outputs')
     
     % define defaults
     act_func_ = 'relu';
     num_ext_inputs = 0;
-    
-    % -------------------- PARSE INPUTS -----------------------------------
-    
+   
     i = 1;
     while i <= length(varargin)
         switch lower(varargin{i})
             case 'act_func'
-                assert(ismember(varargin{i+1}, layer.allowed_auto_NLtypes),...
+                assert(ismember(varargin{i+1}, layer.allowed_act_funcs),...
                     'Invalid activation function "%s"', varargin{i+1})
                 act_func_ = varargin{i+1};
             case 'num_ext_inputs'
@@ -97,11 +92,10 @@ methods
     layer.act_func = act_func_;
     layer.reg_lambdas = Layer.init_reg_lambdas(); % init all to 0s
     layer.init_params = init_params_;
-    layer.latent_vars = []; % set by fit_latent_vars
     if num_ext_inputs == 0    
         layer.ext_weights = [];
     else
-        layer.ext_weights = 0.1*randn(num_out, num_ext_inputs);
+        layer.ext_weights = 0.1 * randn(num_out, num_ext_inputs);
     end
     
     end
@@ -111,19 +105,19 @@ end
 methods
     
     function layer = set_layer_params(layer, varargin)
-    % layer = layer.set_layer_params(kargs)
+    % layer = layer.set_layer_params(kwargs)
     %
     % Takes a sequence of key-value pairs to set parameters for a Layer
     % object
     %
     % INPUTS:
     %   optional key-value pairs:
-    %       'act_func_hid', string
+    %       'act_func', string
     %           'lin' | 'relu' | 'sigmoid' | 'softplus'
-    %           specify hidden layer activation functions
+    %           specifies hidden layer activation functions
     %
     % OUTPUTS:
-    %   layer: updated Layer object
+    %   layer (Layer object): updated Layer object
     
     % check for appropriate number of inputs
     assert(mod(length(varargin), 2) == 0, ...
@@ -132,10 +126,10 @@ methods
     i = 1;
     while i <= length(varargin)
         switch lower(varargin{i})
-            case 'act_func_hid'
-                assert(ismember(varargin{i+1}, layer.allowed_auto_NLtypes), ...
+            case 'act_func'
+                assert(ismember(varargin{i+1}, layer.allowed_act_funcs), ...
                     'Invalid activation function "%s"', varargin{i+1});
-                layer.act_func_hid = varargin{i+1};
+                layer.act_func = varargin{i+1};
             otherwise
                 error('Invalid input flag "%s"', varargin{i})
         end
@@ -146,7 +140,7 @@ methods
     
     
     function layer = set_reg_params(layer, varargin)
-    % layer = layer.set_reg_params(kargs)
+    % layer = layer.set_reg_params(kwargs)
     %
     % Takes a sequence of key-value pairs to set regularization parameters 
     % for a Layer object
@@ -154,10 +148,10 @@ methods
     % INPUTS:
     %   optional key-value pairs:
     %       'reg_type', scalar
-    %           'l2_weights' | 'l2_biases' | 'd2t_hid'
+    %           'l2_weights' | 'l2_biases'
     %
     % OUTPUTS:
-    %   layer: updated Layer object
+    %   layer (Layer object): updated Layer object
     
     % check for appropriate number of inputs
     assert(mod(length(varargin), 2) == 0, ...
@@ -174,10 +168,6 @@ methods
                 assert(varargin{i+1} >= 0, ...
                     'reg value must be nonnegative')
                 layer.reg_lambdas.l2_biases = varargin{i+1};
-			case 'd2t_hid'
-                assert(varargin{i+1} >= 0, ...
-                    'reg value must be nonnegative')
-                layer.reg_lambdas.d2t_hid = varargin{i+1};
             otherwise
                 error('Invalid input flag "%s"', varargin{i});
         end
@@ -193,19 +183,18 @@ methods
     % Sets weights and biases properties of Layer object
     %
     % INPUTS:
-    %   init_weights:   string specifying a random initialization; see
-    %                   allowed_init_types for supported options
-    %                   or a 2x1 cell array containt weights and biases of
-    %                   appropriate dimensions
+    %   init_weights (string): specifies a random initialization; see
+    %       allowed_init_types for supported options; or a 2x1 cell array
+    %       containing weights and biases of appropriate dimensions
     %
     % OUTPUT:
-    %   layer:          updated Layer object
+    %   layer (Layer object): updated Layer object
     
     % call static set_init_weights used in constructor
     [weights_, biases_, init_params_] = Layer.set_init_weights_stat(...
-                                          init_weights, ...
-                                          layer.num_in, ...
-                                          layer.num_out);
+        init_weights, ...
+        layer.num_in, ...
+        layer.num_out);
 
     % set properties
     layer.weights = weights_;
@@ -219,12 +208,12 @@ end
 methods
     
     function reg_pen = get_reg_pen(layer, sig, varargin)
-    % reg_pen = layer.get_reg_pen(pop_activity, kargs)
+    % reg_pen = layer.get_reg_pen(pop_activity, kwargs)
     %
     % Gets regularization penalties on layer weights and biases
     %
     % INPUTS:
-    %   sig:    num_in x T matrix
+    %   sig (num_in x T matrix)
     %
     %   optional key-value pairs:
     %       'indx_tr', vector
@@ -232,7 +221,7 @@ methods
     %           evaluation (default: use all data)
     %
     % OUTPUTS:
-    %   reg_pen: struct containing penalties due to different regs
+    %   reg_pen (struct): contains penalties due to different regs
     
     % define defaults
     indx_tr = NaN; % NaN means we use all available data
@@ -260,26 +249,12 @@ methods
     % set aside constants to keep things clean
     lambda_w = layer.reg_lambdas.l2_weights;
     lambda_b = layer.reg_lambdas.l2_biases;
-    lambda_d2t_hid = layer.reg_lambdas.d2t_hid;
-    
-    % smoothness penalty eval on hidden layer
-    if lambda_d2t_hid ~= 0
-        T = size(sig,2);
-        hidden_act = layer.get_model_internals(sig);
-        reg_mat = spdiags([ones(T, 1) -2*ones(T, 1) ones(T, 1)], ...
-                          [-1 0 1], T, T);
-        smooth_func = 0.5*sum(sum((reg_mat*hidden_act{1}).^2)) / T;
-    else
-        smooth_func = 0;
-    end
     
     % get penalty terms
-    % L2 on weights
+    % l2 on weights
     reg_pen.l2_weights = 0.5*lambda_w*sum(sum(layer.weights.^2)); 
-    % L2 on biases
+    % l2 on biases
     reg_pen.l2_biases = 0.5*lambda_b*sum(layer.biases.^2);
-    % d2t (smoothness penalty) on latent vars
-    reg_pen.d2t_hid = lambda_d2t_hid*smooth_func;        
     
     end % method
     
@@ -294,10 +269,10 @@ methods (Hidden)
     % in the layer to a given input
     %
     % INPUTS:
-    %   sig:    num_in x T matrix
+    %   sig (num_in x T matrix): input
     %
     % OUTPUTS:
-    %   sig:    input passed through activation function
+    %   sig (num_in x T matrix): input passed through activation function
 
     switch layer.act_func
         case 'lin'
@@ -324,10 +299,11 @@ methods (Hidden)
     % function of the nodes in the layer to a given input
     %
     % INPUTS:
-    %   sig:      num_in x T matrix
+    %   sig (num_in x T matrix): input
     %
     % OUTPUTS:
-    %   sig:      input passed through derivative of activation function
+    %   sig (num_in x T matrix): input passed through derivative of 
+    %       activation function
 
     switch layer.act_func
         case 'lin'
@@ -365,7 +341,7 @@ methods (Static)
     %   none
     %
     % OUTPUTS:
-    %   reg_lambdas: struct containing initialized reg params
+    %   reg_lambdas (struct): contains initialized reg params
 
     reg_lambdas.l2_weights = 0;     % L2 on weights
     reg_lambdas.l2_biases = 0;      % L2 on bias params
@@ -385,17 +361,16 @@ methods (Static)
     % the non-static method set_init_weights
     %
     % INPUTS:
-    %   init_method:    string specifying a random initialization; see
-    %                   allowed_init_types for supported options
-    %                   or a 2x1 cell array containt weights and biases of
-    %                   appropriate dimensions
-    %   num_in:         number of input nodes
-    %   num_out:        number of output nodes
+    %   init_method (string): specifies a random initialization; see
+    %       allowed_init_types for supported options; or a 2x1 cell array
+    %       containing weights and biases of appropriate dimensions
+    %   num_in (scalar): number of input nodes
+    %   num_out (scalar): number of output nodes
     %
     % OUTPUTS:
-    %   weights:        num_out x num_in weight matrix
-    %   biases:         num_out x 1 bias vector
-    %   init_params:    struct specifying init_weights and rng_state
+    %   weights (num_out x num_in matrix)
+    %   biases (num_out x 1 vector)
+    %   init_params (struct): specifies init_weights and rng_state
     
     if ischar(init_method)
         
