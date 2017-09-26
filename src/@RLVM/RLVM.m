@@ -66,8 +66,8 @@ properties (Hidden)
     
     % user options
     allowed_noise_dists   = {'gauss', 'poiss', 'bern'};
-    allowed_auto_regtypes = {'l2_weights', 'l2_biases', 'd2t_hid'};
-    allowed_auto_NLtypes  = {'lin', 'relu', 'sigmoid', 'softplus'};
+    allowed_reg_types     = {'l2_weights', 'l2_biases', 'd2t_hid'};
+    allowed_act_funcs     = {'lin', 'relu', 'sigmoid', 'softplus'};
     allowed_stim_regtypes = {'l2', 'd2t', 'd2x', 'd2xt'};    
     allowed_stim_NLtypes  = {'lin', 'relu', 'softplus'};
     allowed_init_types    = {'gauss', 'trunc_gauss', 'uniform', 'orth'};
@@ -176,7 +176,7 @@ methods
                     'Invalid noise distribution "%s"', varargin{i+1})
                 noise_distribution = varargin{i+1};
             case 'act_funcs'
-                assert(all(ismember(varargin{i+1}, net.allowed_auto_NLtypes)), ...
+                assert(all(ismember(varargin{i+1}, net.allowed_act_funcs)), ...
                     'Invalid layer nonlinearities "%s"', varargin{i+1})
                 act_funcs = varargin{i+1};
                 % if act_funcs is specified as a single string, default to 
@@ -314,8 +314,8 @@ methods
                             'act_func', act_funcs{n}, ...
                             'num_ext_inputs', num_ext_inputs(n));
         % inherit values
-        layers_(n).allowed_auto_regtypes = net.allowed_auto_regtypes;
-        layers_(n).allowed_auto_NLtypes = net.allowed_auto_NLtypes;
+        layers_(n).allowed_reg_types = net.allowed_reg_types;
+        layers_(n).allowed_act_funcs = net.allowed_act_funcs;
         layers_(n).min_pred_rate = net.min_pred_rate;
         layers_(n).max_g = net.max_g;       
     end
